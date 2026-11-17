@@ -2,7 +2,7 @@
 //! 本机用户一动鼠标，光标离开这一个像素就会重新出现，不需要额外处理。
 //!
 //! 藏着的时候每隔一会儿看一眼：光标还停在那里、却不在这个窗口上（别的置顶窗口后来盖了上来），
-//! 就把窗口重新放到最上面、再把光标放回去，让它重新用透明的光标。
+//! 就把窗口重新放到最上面，让它重新用透明的光标。检查不会重新定位光标。
 //!
 //! 窗口要有消息循环才能设置光标形状，所以它跑在自己的线程上。藏起和收起都同步等它做完：
 //! 调用方紧接着注入的移动必须排在后面，否则光标刚移到入口，又被挪回屏幕中央。
@@ -20,9 +20,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CreateCursor, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetCursorPos,
     GetMessageW, GetSystemMetrics, HWND_TOPMOST, KillTimer, MSG, PostMessageW, PostQuitMessage,
     RegisterClassW, SM_CXCURSOR, SM_CXSCREEN, SM_CYCURSOR, SM_CYSCREEN, SMTO_ABORTIFHUNG, SW_HIDE,
-    SWP_NOACTIVATE, SWP_SHOWWINDOW, SendMessageTimeoutW, SetCursorPos, SetTimer, SetWindowPos,
-    ShowWindow, TranslateMessage, WM_APP, WM_DESTROY, WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WindowFromPoint,
+    SWP_NOACTIVATE, SWP_SHOWWINDOW, SendMessageTimeoutW, SetCursor, SetCursorPos, SetTimer,
+    SetWindowPos, ShowWindow, TranslateMessage, WM_APP, WM_DESTROY, WM_SETCURSOR, WM_TIMER,
+    WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WindowFromPoint,
 };
 use windows::core::w;
 
@@ -41,6 +41,7 @@ const CHECK_TIMER: usize = 1;
 thread_local! {
     /// 藏着的时候光标停在哪里；没藏时为 `None`。只在窗口所在的线程上读写。
     static PARKED: Cell<Option<(i32, i32)>> = const { Cell::new(None) };
+    static BLANK: Cell<isize> = const { Cell::new(0) };
 }
 
 #[derive(Debug)]
@@ -157,6 +158,7 @@ fn create_window() -> Result<HWND> {
             xor_mask.as_ptr().cast(),
         )
         .map_err(|e| os("CreateCursor", e))?;
+        BLANK.with(|b| b.set(blank.0 as isize));
 
         let class = w!("ScreenFerryCursorHider");
         let wc = WNDCLASSW {
@@ -194,12 +196,26 @@ unsafe extern "system" fn window_proc(
     // SAFETY: 都是对本线程自己的窗口和光标的操作。
     unsafe {
         match msg {
+            WM_SETCURSOR => {
+                let blank = BLANK.with(Cell::get);
+                SetCursor(Some(windows::Win32::UI::WindowsAndMessaging::HCURSOR(
+                    blank as *mut _,
+                )));
+                LRESULT(1)
+            }
             WM_HIDE_CURSOR => {
+                // Park on the primary screen center so a captured pointer has
+                // room to move in every direction. `cover` selects the blank
+                // cursor before SetCursorPos, so the parking move is not
+                // rendered into the desktop capture.
                 let (x, y) = (
                     GetSystemMetrics(SM_CXSCREEN) / 2,
                     GetSystemMetrics(SM_CYSCREEN) / 2,
                 );
-                park(hwnd, x, y);
+                cover(hwnd, x, y);
+                // Only an explicit hide request may park the pointer. Timer
+                // maintenance must never create another positioning event.
+                let _ = SetCursorPos(x, y);
                 PARKED.with(|p| p.set(Some((x, y))));
                 SetTimer(Some(hwnd), CHECK_TIMER, CHECK_MS, None);
                 LRESULT(0)
@@ -222,11 +238,15 @@ unsafe extern "system" fn window_proc(
                     let _ = KillTimer(Some(hwnd), CHECK_TIMER);
                 } else if WindowFromPoint(POINT { x, y }) != hwnd {
                     // 别的置顶窗口盖了上来，光标用的是它的样子。
-                    park(hwnd, x, y);
+                    // Reassert only the cover. A SetCursorPos here produces
+                    // mouse messages that a display viewer could send back
+                    // to the source as if the local user had moved.
+                    cover(hwnd, x, y);
                 }
                 LRESULT(0)
             }
             WM_STOP => {
+                PARKED.with(|p| p.set(None));
                 let _ = DestroyWindow(hwnd);
                 LRESULT(0)
             }
@@ -239,12 +259,12 @@ unsafe extern "system" fn window_proc(
     }
 }
 
-/// 把窗口放到最上面的 (x, y)，光标移上去。移动光标会让窗口收到 WM_SETCURSOR，换成透明的光标。
+/// 把窗口放到最上面的 (x, y)，选择透明光标，但不改变系统指针位置。
 ///
 /// # Safety
 ///
 /// `hwnd` 必须是本线程创建的隐藏窗口。
-unsafe fn park(hwnd: HWND, x: i32, y: i32) {
+unsafe fn cover(hwnd: HWND, x: i32, y: i32) {
     // SAFETY: 调用方保证窗口有效且属于本线程。
     unsafe {
         let _ = SetWindowPos(
@@ -256,7 +276,11 @@ unsafe fn park(hwnd: HWND, x: i32, y: i32) {
             1,
             SWP_NOACTIVATE | SWP_SHOWWINDOW,
         );
-        let _ = SetCursorPos(x, y);
+        // 同步切成透明形状，不能等下一条 WM_SETCURSOR。
+        let blank = BLANK.with(Cell::get);
+        SetCursor(Some(windows::Win32::UI::WindowsAndMessaging::HCURSOR(
+            blank as *mut _,
+        )));
     }
 }
 

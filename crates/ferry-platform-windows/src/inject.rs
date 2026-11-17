@@ -10,8 +10,9 @@ mod service;
 
 pub use service::{
     WinInject, authorize as authorize_input_peer, install as install_input_service,
-    prepare as prepare_input_service, remove as remove_input_service, revoke as revoke_input_peer,
-    run as run_input_service, run_agent as run_input_agent, stop as stop_input_service,
+    is_authorized as is_input_peer_authorized, prepare as prepare_input_service,
+    remove as remove_input_service, revoke as revoke_input_peer, run as run_input_service,
+    run_agent as run_input_agent, stop as stop_input_service,
 };
 
 use ferry_platform::{Error, InputInject, Result};
@@ -34,6 +35,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use crate::display::{ensure_dpi_aware, last_error};
 use crate::keymap::{WinKey, win_key};
 use hider::CursorHider;
+
+/// Identifies our SendInput events even when UIAccess reports them as hardware.
+/// A display receiver must never send them back to the computer that sent them.
+pub(crate) const FERRY_INPUT_TAG: usize = 0x4645_5252;
 
 /// 后台是不是以管理员身份运行。这时 Windows 不让普通程序（例如资源管理器）往它的窗口拖放。
 pub fn is_elevated() -> bool {
@@ -177,7 +182,7 @@ fn keyboard(key: WinKey, up: bool) -> INPUT {
                 wScan: scan,
                 dwFlags: flags,
                 time: 0,
-                dwExtraInfo: 0,
+                dwExtraInfo: FERRY_INPUT_TAG,
             },
         },
     }
@@ -193,7 +198,7 @@ fn mouse(dx: i32, dy: i32, data: u32, flags: MOUSE_EVENT_FLAGS) -> INPUT {
                 mouseData: data,
                 dwFlags: flags,
                 time: 0,
-                dwExtraInfo: 0,
+                dwExtraInfo: FERRY_INPUT_TAG,
             },
         },
     }

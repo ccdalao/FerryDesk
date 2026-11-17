@@ -35,9 +35,9 @@ BEGIN
             VALUE "FileDescription", "ScreenFerry Secure Input"
             VALUE "FileVersion", VERSION_TEXT
             VALUE "InternalName", "screenferry-service"
-            VALUE "LegalCopyright", "MIT OR Apache-2.0"
+            VALUE "LegalCopyright", "GPL-3.0-only; includes MIT/Apache-2.0 components"
             VALUE "OriginalFilename", "screenferry-service.exe"
-            VALUE "ProductName", "ScreenFerry"
+            VALUE "ProductName", "FerryDesk"
             VALUE "ProductVersion", VERSION_TEXT
         END
     END

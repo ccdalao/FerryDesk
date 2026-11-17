@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use ferry_engine::resident::{self, Command, Host, UpdateSource};
+use ferry_engine::resident::{self, Command, DisplayAction, Host, UpdateSource};
 use ferry_engine::{ClientConfig, EdgeFeed, Events, Files, ServerAddr, connect};
 use ferry_ipc::{
     Connection, Endpoint, LinkStatus, Notice, PairingPrompt, ProblemKind, Request, SettingsPatch,
@@ -25,6 +25,7 @@ use crate::support::{AutoConfirm, Device};
 
 #[derive(Clone, Default)]
 struct MockHost {
+    overlays: Arc<Mutex<Vec<MockOverlay>>>,
     /// 服务端监听的端口；默认 0，由系统分配，实际端口从状态里的 `local.port` 读。
     port: u16,
     deny_permissions: Arc<AtomicBool>,
@@ -38,6 +39,7 @@ struct MockHost {
     updater: MockUpdater,
     /// 更新清单从哪里取；没设时指向一个连不上的地址，测试不碰外网。
     update_source: Option<UpdateSource>,
+    display: Option<Arc<TestDisplay>>,
 }
 
 impl Host for MockHost {
@@ -47,6 +49,12 @@ impl Host for MockHost {
     type Clipboard = MockClipboard;
     type Overlay = MockOverlay;
     type Updater = MockUpdater;
+
+    fn display_backend(&self) -> Option<Arc<dyn ferry_platform::DisplayBackend>> {
+        self.display
+            .clone()
+            .map(|display| display as Arc<dyn ferry_platform::DisplayBackend>)
+    }
 
     fn device_name(&self) -> String {
         "测试 Mac".into()
@@ -77,7 +85,9 @@ impl Host for MockHost {
     }
 
     fn overlay(&self) -> MockOverlay {
-        MockOverlay::new()
+        let overlay = MockOverlay::new();
+        self.overlays.lock().unwrap().push(overlay.clone());
+        overlay
     }
     fn updater(&self) -> MockUpdater {
         self.updater.clone()
@@ -117,6 +127,520 @@ impl Host for MockHost {
     fn open_folder(&self, path: &Path) {
         self.shown.lock().unwrap().push(path.to_owned());
     }
+}
+
+#[derive(Default)]
+struct TestDisplay {
+    source: Arc<AtomicU32>,
+    received: Arc<AtomicU32>,
+    resources: Arc<AtomicU32>,
+    overlap: Arc<AtomicBool>,
+    close_viewer: Arc<AtomicBool>,
+    recoveries: AtomicU32,
+    stray_output: AtomicBool,
+    options: Mutex<Vec<(bool, ferry_types::DisplayOptions)>>,
+}
+
+struct TestSource(Arc<AtomicU32>, Arc<AtomicU32>);
+
+impl Drop for TestSource {
+    fn drop(&mut self) {
+        // Destruction is deliberately slower than the peer's viewer. A Start
+        // sent before local cleanup would otherwise race with incoming media.
+        std::thread::sleep(Duration::from_millis(600));
+        self.0.fetch_sub(1, Ordering::SeqCst);
+        self.1.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+impl ferry_platform::DisplaySource for TestSource {
+    fn next_frame(
+        &mut self,
+        wait: Duration,
+    ) -> ferry_platform::Result<Option<ferry_platform::MediaFrame>> {
+        std::thread::sleep(wait.min(Duration::from_millis(10)));
+        Ok(Some(ferry_platform::MediaFrame {
+            track: ferry_platform::MediaTrack::Video,
+            timestamp_us: 10_000,
+            bytes: vec![1, 2, 3],
+        }))
+    }
+}
+
+struct TestViewer(Arc<AtomicU32>, Arc<AtomicU32>, Arc<AtomicBool>);
+
+impl Drop for TestViewer {
+    fn drop(&mut self) {
+        std::thread::sleep(Duration::from_millis(300));
+        self.1.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+impl ferry_platform::DisplayViewer for TestViewer {
+    fn present(&mut self, frame: ferry_platform::MediaFrame) -> ferry_platform::Result<bool> {
+        assert_eq!(frame.bytes, [1, 2, 3]);
+        if self.2.load(Ordering::SeqCst) {
+            return Err(PlatformError::Cancelled);
+        }
+        Ok(self.0.fetch_add(1, Ordering::SeqCst) == 0)
+    }
+}
+
+impl ferry_platform::DisplayBackend for TestDisplay {
+    fn screens(&self) -> ferry_platform::Result<Vec<ferry_types::DisplayScreen>> {
+        Ok(vec![ferry_types::DisplayScreen {
+            id: 1,
+            bounds: Rect::new(0, 0, 1000, 800),
+            primary: true,
+        }])
+    }
+    fn source_with_options(
+        &self,
+        peer: [u8; 32],
+        audio: bool,
+        options: ferry_types::DisplayOptions,
+    ) -> ferry_platform::Result<Box<dyn ferry_platform::DisplaySource>> {
+        self.options.lock().unwrap().push((true, options));
+        self.source(peer, audio)
+    }
+    fn viewer_with_options(
+        &self,
+        audio: bool,
+        options: ferry_types::DisplayOptions,
+    ) -> ferry_platform::Result<Box<dyn ferry_platform::DisplayViewer>> {
+        self.options.lock().unwrap().push((false, options));
+        self.viewer(audio)
+    }
+    fn recover(&self) -> ferry_platform::Result<()> {
+        if self.resources.load(Ordering::SeqCst) != 0 {
+            self.overlap.store(true, Ordering::SeqCst);
+        }
+        self.stray_output.store(false, Ordering::SeqCst);
+        self.recoveries.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn source(
+        &self,
+        _peer: [u8; 32],
+        _audio: bool,
+    ) -> ferry_platform::Result<Box<dyn ferry_platform::DisplaySource>> {
+        self.source.fetch_add(1, Ordering::SeqCst);
+        if self.resources.fetch_add(1, Ordering::SeqCst) != 0 {
+            self.overlap.store(true, Ordering::SeqCst);
+        }
+        Ok(Box::new(TestSource(
+            self.source.clone(),
+            self.resources.clone(),
+        )))
+    }
+
+    fn viewer(
+        &self,
+        _audio: bool,
+    ) -> ferry_platform::Result<Box<dyn ferry_platform::DisplayViewer>> {
+        self.received.store(0, Ordering::SeqCst);
+        if self.resources.fetch_add(1, Ordering::SeqCst) != 0 {
+            self.overlap.store(true, Ordering::SeqCst);
+        }
+        Ok(Box::new(TestViewer(
+            self.received.clone(),
+            self.resources.clone(),
+            self.close_viewer.clone(),
+        )))
+    }
+}
+
+#[tokio::test]
+async fn idle_display_recovery_removes_reactivated_output_without_any_peer() {
+    let display = Arc::new(TestDisplay::default());
+    display.stray_output.store(true, Ordering::SeqCst);
+    let daemon = Daemon::start_with(
+        Device::new(),
+        MockHost {
+            display: Some(display.clone()),
+            ..Default::default()
+        },
+    )
+    .await;
+    timeout(Duration::from_secs(2), async {
+        while display.recoveries.load(Ordering::SeqCst) == 0 {
+            sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("启动时应回收上一次残留屏幕");
+    assert!(!display.stray_output.load(Ordering::SeqCst));
+    display.stray_output.store(true, Ordering::SeqCst);
+    timeout(Duration::from_secs(5), async {
+        while display.stray_output.load(Ordering::SeqCst) {
+            sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("未连接设备时，也应回收后台启动后重新激活的残留屏幕");
+    assert_eq!(display.resources.load(Ordering::SeqCst), 0);
+    assert!(!display.overlap.load(Ordering::SeqCst));
+    daemon.handle.send(Command::Quit);
+    daemon.task.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn display_extension_reuses_pairing_and_switches_both_directions_from_the_resident() {
+    use ferry_trust::{Peer, PeerList};
+
+    let controller = Device::new();
+    let controlled = Device::new();
+    let a = controller
+        .store
+        .identity("controller")
+        .unwrap()
+        .fingerprint();
+    let b = controlled
+        .store
+        .identity("controlled")
+        .unwrap()
+        .fingerprint();
+    for (device, fingerprint) in [(&controller, b), (&controlled, a)] {
+        let mut peers = PeerList::new();
+        peers.add(Peer {
+            fingerprint,
+            name: "paired".into(),
+            addr: None,
+        });
+        device.store.save_peers(&peers).unwrap();
+    }
+    let a_display = Arc::new(TestDisplay::default());
+    let b_display = Arc::new(TestDisplay::default());
+    let a = Daemon::start_with(
+        controller,
+        MockHost {
+            display: Some(a_display.clone()),
+            ..Default::default()
+        },
+    )
+    .await;
+    let mut a_ui = a.ui().await;
+    let port = a_ui
+        .state_where("服务端等待", |state| state.local.port.is_some())
+        .await
+        .local
+        .port
+        .unwrap();
+    let b = Daemon::start_configured(
+        controlled,
+        MockHost {
+            display: Some(b_display.clone()),
+            ..Default::default()
+        },
+        Config {
+            role: Role::Client,
+            server: format!("127.0.0.1:{port}"),
+            ..Default::default()
+        },
+    )
+    .await;
+    let mut b_ui = b.ui().await;
+    a_ui.state_where("扩展屏连接", |s| {
+        s.display_extension
+            .as_ref()
+            .is_some_and(|d| !d.available_peers.is_empty())
+    })
+    .await;
+    let peer = b
+        .device
+        .store
+        .identity("controlled")
+        .unwrap()
+        .fingerprint()
+        .to_hex();
+    a_ui.send(Request::BeginAlignment {
+        id: 99,
+        fingerprint: peer.clone(),
+        local_screen: Some(1),
+        peer_screen: Some(1),
+        horizontal: false,
+        reversed: false,
+    })
+    .await;
+    timeout(Duration::from_secs(3), async {
+        while a.host.overlays.lock().unwrap().len() < 2 || b.host.overlays.lock().unwrap().len() < 2
+        {
+            sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let local_ruler = a.host.overlays.lock().unwrap().last().unwrap().clone();
+    let peer_ruler = b.host.overlays.lock().unwrap().last().unwrap().clone();
+    local_ruler.emit(ferry_platform::OverlayEvent::Clicked(1200));
+    local_ruler.emit(ferry_platform::OverlayEvent::Clicked(1800));
+    peer_ruler.emit(ferry_platform::OverlayEvent::Clicked(1000));
+    peer_ruler.emit(ferry_platform::OverlayEvent::Clicked(2000));
+    let alignment = a_ui
+        .wait("两端实屏四个取点", |notice| match notice {
+            Notice::AlignmentResult {
+                id: 99,
+                alignment,
+                error,
+            } => {
+                assert!(error.is_none(), "{error:?}");
+                Some(*alignment)
+            }
+            _ => None,
+        })
+        .await;
+    assert_eq!(
+        alignment,
+        Some(ferry_types::EdgeAlignment {
+            offset: 200,
+            span: 600,
+            contact: Some(ferry_types::EdgeContact {
+                local: [200, 800],
+                remote: [0, 1000]
+            })
+        })
+    );
+    assert!(
+        a.device
+            .store
+            .config()
+            .unwrap()
+            .device(&peer)
+            .alignment
+            .is_default(),
+        "取点结果在用户保存前不能改配置"
+    );
+    timeout(Duration::from_secs(2), async {
+        while local_ruler.shown().is_some() || peer_ruler.shown().is_some() {
+            sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    a.handle
+        .send(Command::Display(DisplayAction::ExtendController));
+    a_ui.state_where("主控扩展首帧", |s| {
+        s.display_extension
+            .as_ref()
+            .is_some_and(|d| d.running && d.active == Some(DisplayAction::ExtendController))
+    })
+    .await;
+    assert_eq!(a_display.source.load(Ordering::SeqCst), 1);
+    assert!(b_display.received.load(Ordering::SeqCst) > 0);
+    // While the controller owns the virtual desktop, the ordinary edge must not
+    // grab its mouse and route it into the receiver's unrelated desktop.
+    a.host.capture.emit(ferry_platform::CaptureEvent::Pointer {
+        position: ferry_types::Point::new(999, 400),
+        dx: 5,
+        dy: 0,
+    });
+    sleep(Duration::from_millis(60)).await;
+    assert!(!a.host.capture.is_grabbed());
+    b.handle
+        .send(Command::Display(DisplayAction::ExtendControlled));
+    b_ui.state_where("被控扩展首帧", |s| {
+        s.display_extension
+            .as_ref()
+            .is_some_and(|d| d.running && d.active == Some(DisplayAction::ExtendControlled))
+    })
+    .await;
+    assert_eq!(b_display.source.load(Ordering::SeqCst), 1);
+    assert!(a_display.received.load(Ordering::SeqCst) > 0);
+    assert!(
+        !a_display.overlap.load(Ordering::SeqCst),
+        "换向时旧 source 尚未回收就启动 viewer"
+    );
+    assert!(
+        !b_display.overlap.load(Ordering::SeqCst),
+        "换向时旧 viewer 尚未回收就启动 source"
+    );
+    // The controller is now the viewer. Its ordinary edge route must still
+    // reach the source computer's physical screen and allow a return.
+    a.host.capture.emit(ferry_platform::CaptureEvent::Pointer {
+        position: ferry_types::Point::new(999, 400),
+        dx: 5,
+        dy: 0,
+    });
+    crate::support::eventually("反向扩展时进入来源电脑的实体屏", || {
+        a.host.capture.is_grabbed()
+    })
+    .await;
+    a.host.capture.emit(ferry_platform::CaptureEvent::Pointer {
+        position: ferry_types::Point::new(999, 400),
+        dx: -50,
+        dy: 0,
+    });
+    crate::support::eventually("反向扩展时返回扩展画面", || {
+        !a.host.capture.is_grabbed()
+    })
+    .await;
+    b.handle.send(Command::Display(DisplayAction::Stop));
+    a_ui.state_where("结束扩展屏", |s| {
+        s.display_extension
+            .as_ref()
+            .is_some_and(|d| d.active.is_none())
+    })
+    .await;
+    timeout(Duration::from_secs(2), async {
+        while b_display.source.load(Ordering::SeqCst) != 0 {
+            sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    // The controlled PC owns this preset and starts the extension itself. Its
+    // top-positioned viewer must make the physical PC the controller's bottom edge.
+    let plan = ferry_types::DisplayPlan {
+        id: 7,
+        name: "被控工作桌面".into(),
+        peer: a
+            .device
+            .store
+            .identity("controller")
+            .unwrap()
+            .fingerprint()
+            .to_hex(),
+        local_source: true,
+        options: ferry_types::DisplayOptions {
+            source_screen: Some(1),
+            viewer_screen: Some(1),
+            side: Side::Top,
+            primary: ferry_types::DisplayPrimary::Viewer,
+            alignment: Default::default(),
+        },
+        audio: false,
+        shortcut: Some(b'3'),
+    };
+    b_ui.send(Request::SetDisplayPlans {
+        plans: vec![plan.clone()],
+    })
+    .await;
+    b_ui.state_where("方案保存", |s| {
+        s.display_extension
+            .as_ref()
+            .is_some_and(|d| d.plans == [plan.clone()])
+    })
+    .await;
+    assert_eq!(
+        b.device.store.config().unwrap().display_plans.as_slice(),
+        std::slice::from_ref(&plan)
+    );
+    b_ui.send(Request::RunDisplayPlan { id: 7 }).await;
+    b_ui.state_where("被控端方案首帧", |s| {
+        s.display_extension
+            .as_ref()
+            .is_some_and(|d| d.running && d.active_plan == Some(7))
+    })
+    .await;
+    assert_eq!(
+        b_display.options.lock().unwrap().last(),
+        Some(&(true, plan.options))
+    );
+    assert_eq!(
+        a_display.options.lock().unwrap().last(),
+        Some(&(false, plan.options))
+    );
+    timeout(Duration::from_secs(2), async {
+        while a.host.capture.is_grabbed() {
+            sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("方案换边时应归还旧路由");
+    a.host.capture.emit(ferry_platform::CaptureEvent::Pointer {
+        position: ferry_types::Point::new(500, 799),
+        dx: 0,
+        dy: 5,
+    });
+    crate::support::eventually(
+        "上方扩展方案沿下边缘进入来源实体屏",
+        || a.host.capture.is_grabbed(),
+    )
+    .await;
+    a.host.capture.emit(ferry_platform::CaptureEvent::Pointer {
+        position: ferry_types::Point::new(500, 799),
+        dx: 0,
+        dy: -50,
+    });
+    crate::support::eventually("上方扩展方案返回扩展画面", || {
+        !a.host.capture.is_grabbed()
+    })
+    .await;
+    b.handle.send(Command::Display(DisplayAction::TogglePause));
+    b_ui.state_where("方案暂停回到各自桌面", |s| {
+        s.display_extension
+            .as_ref()
+            .is_some_and(|d| d.paused && d.active.is_none() && !d.running)
+    })
+    .await;
+    timeout(Duration::from_secs(2), async {
+        while b_display.source.load(Ordering::SeqCst) != 0 {
+            sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    b.handle.send(Command::Display(DisplayAction::TogglePause));
+    b_ui.state_where("恢复相同屏幕方案", |s| {
+        s.display_extension
+            .as_ref()
+            .is_some_and(|d| !d.paused && d.running && d.active_plan == Some(7))
+    })
+    .await;
+    assert_eq!(
+        b_display.options.lock().unwrap().last(),
+        Some(&(true, plan.options))
+    );
+    b.handle.send(Command::Display(DisplayAction::Stop));
+    b_ui.state_where("方案停止", |s| {
+        s.display_extension
+            .as_ref()
+            .is_some_and(|d| d.active.is_none())
+    })
+    .await;
+    // Stopping from the peer must clear routing as well as stop media resources.
+    // Repeat the original direction, then close its viewer to model an error/exit.
+    a.handle
+        .send(Command::Display(DisplayAction::ExtendController));
+    a_ui.state_where("再次主控拓展", |s| {
+        s.display_extension
+            .as_ref()
+            .is_some_and(|d| d.running && d.active == Some(DisplayAction::ExtendController))
+    })
+    .await;
+    b_display.close_viewer.store(true, Ordering::SeqCst);
+    a_ui.state_where("接收窗口退出后结束", |s| {
+        s.display_extension
+            .as_ref()
+            .is_some_and(|d| d.active.is_none())
+    })
+    .await;
+    timeout(Duration::from_secs(2), async {
+        while a_display.resources.load(Ordering::SeqCst) != 0
+            || b_display.resources.load(Ordering::SeqCst) != 0
+        {
+            sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("接收失败后仍有虚拟屏或窗口资源");
+    a.host.capture.emit(ferry_platform::CaptureEvent::Pointer {
+        position: ferry_types::Point::new(999, 400),
+        dx: 5,
+        dy: 0,
+    });
+    timeout(Duration::from_secs(2), async {
+        while !a.host.capture.is_grabbed() {
+            sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("媒体失败后普通键鼠共享应恢复");
+    a.handle.send(Command::Quit);
+    b.handle.send(Command::Quit);
+    a.task.await.unwrap().unwrap();
+    b.task.await.unwrap().unwrap();
 }
 
 /// 一份常驻后台，加上连着它的“设置界面”。

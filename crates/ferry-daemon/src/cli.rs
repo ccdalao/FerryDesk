@@ -9,6 +9,7 @@ use ferry_engine::DEFAULT_PORT;
 pub(crate) const USAGE: &str = "\
 用法：
   screenferry         [--data-dir 目录] [--autostart] [-v]
+  screenferry elevate [--data-dir 目录]
   screenferry serve   [--listen 地址] [--side 方向] [--no-cmd-ctrl-swap] [--no-announce] [通用选项]
   screenferry connect [服务端地址] [通用选项]
   screenferry peers   [--data-dir 目录]
@@ -22,6 +23,7 @@ pub(crate) const USAGE: &str = "\
 不打开。已经有一份在运行时，请它打开设置界面后退出。下面的命令用于调试，参数取代 config.toml。
 
 命令：
+  elevate    Windows：经 UAC 确认后，以管理员权限重启后台；主控可以在管理员窗口前台时捕获键鼠
   serve      在拥有键鼠的电脑上运行，等待另一台连接
   connect    在被控制的电脑上运行，连接到运行 serve 的那台。
              不填地址时在局域网里自动寻找：优先已配对的；从未配对过时，只有一台才自动连
@@ -67,6 +69,8 @@ pub(crate) struct Options {
 }
 
 pub(crate) enum Mode {
+    /// 用户主动请求 Windows 管理员后台；保留数据目录，以同一身份重新连接。
+    Elevate,
     /// 常驻运行，按 `config.toml` 工作。`autostart`：登录时由系统启动，不打开设置界面。
     Resident {
         autostart: bool,
@@ -83,6 +87,10 @@ pub(crate) enum Mode {
     },
     Peers,
     InputKey,
+    InstallDisplayDriver {
+        inf: PathBuf,
+    },
+    RemoveDisplayDriver,
     Forget {
         target: String,
     },
@@ -106,8 +114,17 @@ pub(crate) fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, St
         None => "resident".to_owned(),
         Some(first) if first.starts_with('-') => "resident".to_owned(),
         Some(
-            command @ ("serve" | "connect" | "peers" | "forget" | "input-key" | "send" | "quit"
-            | "preview-capsule"),
+            command @ ("serve"
+            | "connect"
+            | "peers"
+            | "forget"
+            | "input-key"
+            | "send"
+            | "quit"
+            | "elevate"
+            | "preview-capsule"
+            | "install-display-driver"
+            | "remove-display-driver"),
         ) => {
             let command = command.to_owned();
             args.next();
@@ -143,8 +160,10 @@ pub(crate) fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, St
             "--no-cmd-ctrl-swap" if command == "serve" => swap_cmd_ctrl = false,
             "--no-announce" if command == "serve" => announce = false,
             other
-                if matches!(command.as_str(), "connect" | "forget" | "preview-capsule")
-                    && positional.is_none()
+                if matches!(
+                    command.as_str(),
+                    "connect" | "forget" | "preview-capsule" | "install-display-driver"
+                ) && positional.is_none()
                     && !other.starts_with('-') =>
             {
                 positional = Some(other.to_owned());
@@ -157,6 +176,7 @@ pub(crate) fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, St
     }
 
     let mode = match command.as_str() {
+        "elevate" => Mode::Elevate,
         "resident" => Mode::Resident { autostart },
         "serve" => Mode::Serve {
             listen,
@@ -169,6 +189,10 @@ pub(crate) fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, St
         },
         "peers" => Mode::Peers,
         "input-key" => Mode::InputKey,
+        "install-display-driver" => Mode::InstallDisplayDriver {
+            inf: PathBuf::from(positional.ok_or("install-display-driver 需要 INF 路径")?),
+        },
+        "remove-display-driver" => Mode::RemoveDisplayDriver,
         "quit" => Mode::Quit,
         "send" if paths.is_empty() => return Err("send 需要至少一个文件或文件夹".into()),
         "send" => Mode::Send { paths },

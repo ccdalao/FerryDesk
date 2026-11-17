@@ -251,6 +251,9 @@ unsafe extern "system" fn service_main(_: u32, _: *mut PWSTR) {
     };
     status(handle, SERVICE_START_PENDING, 0);
     let result = service_loop(handle);
+    if let Err(error) = &result {
+        super::util::report_error("输入服务", error);
+    }
     status(handle, SERVICE_STOPPED, u32::from(result.is_err()));
 }
 
@@ -307,8 +310,9 @@ fn service_loop(handle: SERVICE_STATUS_HANDLE) -> Result<()> {
             && let Some(user) = user
             && Instant::now() >= retry
         {
-            if let Ok(process) = AgentProcess::launch(&installed, session, &user.0) {
-                agent = Some((session, user, process));
+            match AgentProcess::launch(&installed, session, &user.0) {
+                Ok(process) => agent = Some((session, user, process)),
+                Err(error) => super::util::report_error("启动输入代理", &error),
             }
             retry = Instant::now() + Duration::from_secs(2);
         }

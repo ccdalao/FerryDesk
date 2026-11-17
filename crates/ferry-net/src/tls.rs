@@ -59,12 +59,20 @@ impl Tls {
     /// 作为接受方完成 TLS 握手。连接类型在随后的 [`accept`](crate::accept) 中按对方的 `Hello` 设定。
     pub async fn accept(&self, stream: TcpStream) -> Result<(Framed<ServerStream>, Fingerprint)> {
         stream.set_nodelay(true)?;
-        let stream = self.acceptor.accept(stream).await?;
+        let std_stream = stream.into_std()?;
+        let priority = crate::priority::attach(&std_stream, Channel::Input);
+        let stream = self
+            .acceptor
+            .accept(TcpStream::from_std(std_stream)?)
+            .await?;
         let peer = peer_fingerprint(
             stream.get_ref().1.alpn_protocol(),
             stream.get_ref().1.peer_certificates(),
         )?;
-        Ok((Framed::new(stream, Channel::Input), peer))
+        Ok((
+            Framed::new(stream, Channel::Input).with_priority(priority),
+            peer,
+        ))
     }
 
     /// 连接到 `addr` 并完成 TLS 握手。
@@ -76,13 +84,16 @@ impl Tls {
         let stream = TcpStream::connect(addr).await?;
         // 键鼠事件很小、很急，一律关闭 Nagle 算法。
         stream.set_nodelay(true)?;
+        let std_stream = stream.into_std()?;
+        let priority = crate::priority::attach(&std_stream, channel);
+        let stream = TcpStream::from_std(std_stream)?;
         let name = ServerName::try_from(SERVER_NAME).expect("常量是合法的主机名");
         let stream = self.connector.connect(name, stream).await?;
         let peer = peer_fingerprint(
             stream.get_ref().1.alpn_protocol(),
             stream.get_ref().1.peer_certificates(),
         )?;
-        Ok((Framed::new(stream, channel), peer))
+        Ok((Framed::new(stream, channel).with_priority(priority), peer))
     }
 }
 

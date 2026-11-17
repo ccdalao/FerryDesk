@@ -2,9 +2,9 @@
 
 use ferry_proto::{
     Bye, ByeReason, Cancel, CancelReason, Capabilities, Channel, Chunk, ClipboardItem,
-    ClipboardOffer, ClipboardRequest, Codec, DropHint, Enter, EntryKind, FileCancel, FileEnd,
-    FileEntry, FileList, FileOffer, FileResume, Hello, HintState, Message, Reject, RejectReason,
-    WIRE_FORMAT, Welcome,
+    ClipboardOffer, ClipboardRequest, Codec, DisplayControl, DisplayDirection, DisplayPacket,
+    DisplayTrack, DropHint, Enter, EntryKind, FileCancel, FileEnd, FileEntry, FileList, FileOffer,
+    FileResume, Hello, HintState, Message, Reject, RejectReason, WIRE_FORMAT, Welcome,
 };
 use ferry_types::{
     ClipboardFormat, Display, DisplayId, InputEvent, KeyAction, KeyCode, LockKeys, MouseButton,
@@ -20,6 +20,128 @@ pub fn samples() -> Vec<(Channel, Message)> {
     let input = |event| (Channel::Input, Message::Input(event));
 
     vec![
+        (
+            Channel::Input,
+            Message::DisplayControl(DisplayControl::StartConfigured {
+                id: 23,
+                direction: DisplayDirection::ExtendPeer,
+                audio: false,
+                options: ferry_types::DisplayOptions {
+                    alignment: ferry_types::EdgeAlignment {
+                        offset: 200,
+                        span: 600,
+                        contact: None,
+                    },
+                    ..Default::default()
+                },
+            }),
+        ),
+        (
+            Channel::Input,
+            Message::DisplayControl(DisplayControl::StartConfigured {
+                id: 13,
+                direction: DisplayDirection::ExtendLocal,
+                audio: true,
+                options: ferry_types::DisplayOptions {
+                    source_screen: Some(1),
+                    viewer_screen: Some(2),
+                    side: Side::Left,
+                    primary: ferry_types::DisplayPrimary::Viewer,
+                    alignment: Default::default(),
+                },
+            }),
+        ),
+        (
+            Channel::Input,
+            Message::DisplayControl(DisplayControl::Screens {
+                screens: vec![ferry_types::DisplayScreen {
+                    id: 2,
+                    bounds: Rect::new(-1920, 0, 1920, 1080),
+                    primary: true,
+                }],
+                side: Side::Bottom,
+            }),
+        ),
+        (
+            Channel::DisplayStream,
+            Message::DisplayInput(InputEvent::PointerMotion { position: at }),
+        ),
+        (
+            Channel::Input,
+            Message::DisplayControl(DisplayControl::Start {
+                id: 42,
+                direction: DisplayDirection::ExtendLocal,
+                audio: true,
+            }),
+        ),
+        (
+            Channel::Input,
+            Message::DisplayControl(DisplayControl::Ready { id: 42 }),
+        ),
+        (
+            Channel::Input,
+            Message::DisplayControl(DisplayControl::Stop { id: 42 }),
+        ),
+        (
+            Channel::Input,
+            Message::DisplayControl(DisplayControl::Unavailable { id: 42 }),
+        ),
+        (Channel::DisplayStream, Message::DisplayOpen { id: 42 }),
+        (
+            Channel::DisplayStream,
+            Message::DisplayRealtimeOffer {
+                id: 42,
+                port: 12345,
+                key: [7; 32],
+            },
+        ),
+        (
+            Channel::DisplayStream,
+            Message::DisplayRealtimeReady {
+                id: 42,
+                port: 12346,
+            },
+        ),
+        (
+            Channel::DisplayStream,
+            Message::DisplayRealtimeCommit { id: 42, udp: true },
+        ),
+        (
+            Channel::DisplayStream,
+            Message::DisplayRealtimeFeedback {
+                frames: 50,
+                lost: 1,
+                recovered: 3,
+                queue_ms: 2,
+                keyframe: true,
+            },
+        ),
+        (Channel::DisplayStream, Message::DisplayRealtimeFallback),
+        (
+            Channel::DisplayStream,
+            Message::DisplayPacket(DisplayPacket {
+                track: DisplayTrack::Video,
+                timestamp_us: 123_456,
+                end: true,
+                bytes: vec![0, 0, 1, 0x65, 1, 2, 3],
+            }),
+        ),
+        (
+            Channel::DisplayStream,
+            Message::DisplayUdpOffer {
+                id: 42,
+                port: 34_567,
+                token: 0x0123_4567_89AB_CDEF,
+            },
+        ),
+        (
+            Channel::DisplayStream,
+            Message::DisplayUdpReady {
+                id: 42,
+                port: 45_678,
+                token: 0x0123_4567_89AB_CDEF,
+            },
+        ),
         (Channel::Input, Message::SecureChallenge { nonce: [7; 32] }),
         (
             Channel::Input,

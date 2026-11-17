@@ -48,7 +48,7 @@ pub(crate) fn init(options: &Options) {
     let _ = LEVEL.set(handle);
 
     let terminal = io::stderr().is_terminal();
-    let file = matches!(options.mode, Mode::Resident { .. })
+    let file = matches!(options.mode, Mode::Resident { .. } | Mode::Elevate)
         .then(|| log_file(options))
         .flatten()
         .map(Mutex::new);

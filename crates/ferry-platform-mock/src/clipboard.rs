@@ -1,6 +1,7 @@
 //! 剪贴板：`Clipboard` 的测试实现。
 
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use ferry_platform::{Clipboard, Result};
 use ferry_types::{ClipboardContent, ClipboardFormat};
@@ -16,6 +17,8 @@ struct State {
     content: ClipboardContent,
     count: u64,
     writes: usize,
+    reads: usize,
+    next_read_delay: Option<Duration>,
 }
 
 impl MockClipboard {
@@ -40,6 +43,16 @@ impl MockClipboard {
         self.lock().writes
     }
 
+    /// 模拟其他程序延迟渲染剪贴板，或图片格式转换耗时。
+    pub fn delay_next_read(&self, delay: Duration) {
+        self.lock().next_read_delay = Some(delay);
+    }
+
+    /// 已开始的读取次数，包含仍在等待系统返回的读取。
+    pub fn reads(&self) -> usize {
+        self.lock().reads
+    }
+
     fn lock(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -60,7 +73,15 @@ impl Clipboard for MockClipboard {
     }
 
     fn read(&mut self) -> Result<ClipboardContent> {
-        Ok(self.lock().content.clone())
+        let (content, delay) = {
+            let mut state = self.lock();
+            state.reads += 1;
+            (state.content.clone(), state.next_read_delay.take())
+        };
+        if let Some(delay) = delay {
+            std::thread::sleep(delay);
+        }
+        Ok(content)
     }
 
     fn write(&mut self, content: &ClipboardContent) -> Result<u64> {

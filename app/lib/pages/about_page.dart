@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../build_info.dart';
 import '../l10n/l10n.dart';
 import '../state/app_scope.dart';
 import '../state/app_state.dart';
@@ -19,6 +20,9 @@ class AboutPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
     final c = SfColors.of(context);
+    final l = context.l10n;
+    final version = buildVersion.isEmpty ? state.version : buildVersion;
+    final needsRestart = buildVersion.isNotEmpty && state.version.isNotEmpty && buildVersion != state.version;
     return PageScaffold(
       title: context.l10n.aboutTitle,
       leading: Pressable(
@@ -37,18 +41,26 @@ class AboutPage extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  const AppIconMark(size: 66),
+                  const AppIconMark(size: 60),
                   const SizedBox(width: 18),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('ScreenFerry', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800)),
-                        const SizedBox(height: 2),
+                        const Text(
+                          'FerryDesk',
+                          style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.5),
+                        ),
+                        if (personalBuildLabel.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            personalBuildLabel,
+                            style: TextStyle(fontSize: 13, color: c.accent, fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                        const SizedBox(height: 6),
                         Text(
-                          state.version.isEmpty
-                              ? context.l10n.aboutTagline
-                              : context.l10n.aboutVersionLine(state.version),
+                          version.isEmpty ? l.aboutTagline : l.aboutVersionLine(version),
                           style: TextStyle(color: c.muted, height: 1.5),
                         ),
                       ],
@@ -57,7 +69,14 @@ class AboutPage extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 18),
-              const UpdatePanel(),
+              if (needsRestart)
+                SfRow(
+                  icon: Icons.restart_alt_rounded,
+                  title: l.aboutRestartBackend,
+                  subtitle: l.aboutBackendVersion(state.version),
+                )
+              else
+                const UpdatePanel(),
             ],
           ),
         ),
@@ -74,17 +93,39 @@ class AboutPage extends StatelessWidget {
               trailing: SfSwitch(
                 value: state.settings.autoUpdate,
                 label: context.l10n.updateAuto,
-                onChanged: state.online ? (v) => state.updateSettings(SettingsPatch(autoUpdate: v)) : null,
+                onChanged: state.online && !needsRestart
+                    ? (v) => state.updateSettings(SettingsPatch(autoUpdate: v))
+                    : null,
               ),
             ),
             SfRow(
               icon: Icons.code_rounded,
-              title: context.l10n.aboutAuthor,
-              subtitle: 'github.com/icloudza',
+              title: l.aboutProject,
+              subtitle: 'github.com/ccdalao/FerryDesk',
               trailing: Icon(Icons.open_in_new_rounded, size: 18, color: c.muted),
-              onTap: () => state.openLink('https://github.com/icloudza'),
+              onTap: () => state.openLink(projectUrl),
             ),
-            SfRow(icon: Icons.info_outline_rounded, title: context.l10n.aboutLicense, subtitle: 'MIT OR Apache-2.0'),
+            SfRow(
+              icon: Icons.person_outline_rounded,
+              title: context.l10n.aboutAuthor,
+              subtitle: '小小小龙 · ccdalao',
+              trailing: Icon(Icons.open_in_new_rounded, size: 18, color: c.muted),
+              onTap: () => state.openLink(maintainerUrl),
+            ),
+            SfRow(
+              icon: Icons.description_outlined,
+              title: context.l10n.aboutLicense,
+              subtitle: l.aboutLicenseDetail,
+              trailing: Icon(Icons.open_in_new_rounded, size: 18, color: c.muted),
+              onTap: () => state.openLink('$projectUrl/blob/main/LICENSE-GPL'),
+            ),
+            SfRow(
+              icon: Icons.favorite_border_rounded,
+              title: l.aboutCredits,
+              subtitle: 'ScreenFerry · Apollo · Moonlight · Virtual Display Driver',
+              trailing: Icon(Icons.open_in_new_rounded, size: 18, color: c.muted),
+              onTap: () => state.openLink('$projectUrl/blob/main/docs/credits.md'),
+            ),
           ],
         ),
       ],

@@ -26,6 +26,7 @@ fn kind(message: &Message) -> &'static str {
         Message::OpenSettings => "OpenSettings",
         Message::InputBlocked => "InputBlocked",
         Message::AppInfo { .. } => "AppInfo",
+        Message::DisplayControl(_) => "DisplayControl",
         Message::Input(event) => match event {
             InputEvent::Key { .. } => "Key",
             InputEvent::PointerMotion { .. } => "PointerMotion",
@@ -48,10 +49,20 @@ fn kind(message: &Message) -> &'static str {
         Message::FileData { .. } => "FileData",
         Message::FileEnd(_) => "FileEnd",
         Message::FileDone => "FileDone",
+        Message::DisplayOpen { .. } => "DisplayOpen",
+        Message::DisplayPacket(_) => "DisplayPacket",
+        Message::DisplayInput(_) => "DisplayInput",
+        Message::DisplayUdpOffer { .. } => "DisplayUdpOffer",
+        Message::DisplayUdpReady { .. } => "DisplayUdpReady",
+        Message::DisplayRealtimeOffer { .. } => "DisplayRealtimeOffer",
+        Message::DisplayRealtimeReady { .. } => "DisplayRealtimeReady",
+        Message::DisplayRealtimeCommit { .. } => "DisplayRealtimeCommit",
+        Message::DisplayRealtimeFeedback { .. } => "DisplayRealtimeFeedback",
+        Message::DisplayRealtimeFallback => "DisplayRealtimeFallback",
     }
 }
 
-const MESSAGE_KINDS: usize = 37;
+const MESSAGE_KINDS: usize = 48;
 
 fn decode(channel: Channel, buf: &[u8]) -> Result<Option<(Message, usize)>, DecodeError> {
     Codec::new(channel).decode(buf)

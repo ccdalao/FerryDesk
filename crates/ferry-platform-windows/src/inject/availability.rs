@@ -56,7 +56,7 @@ pub(super) fn check() -> Result<()> {
     };
     if blocked {
         return Err(Error::PermissionDenied(
-            "前台程序以管理员身份运行，当前 ScreenFerry 无法控制它；请在这台电脑上切回普通窗口，或以管理员身份重新启动 ScreenFerry（仍不支持安全桌面）",
+            "前台程序以管理员身份运行，请在这台电脑的 ScreenFerry 托盘菜单选择“以管理员权限重启后台”，或先切回普通窗口；UAC 安全桌面仍需已授权的安全输入服务",
         ));
     }
     Ok(())

@@ -7,6 +7,45 @@ import 'package:flutter/material.dart';
 
 import '../theme/tokens.dart';
 
+/// Optional label for a personal build, supplied when packaging.
+const personalBuildLabel = String.fromEnvironment('FERRYDESK_BUILD_LABEL');
+
+/// Product identity text with a readable personal-build subtitle.
+class ProductTitle extends StatelessWidget {
+  const ProductTitle({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = SfColors.of(context);
+    return Semantics(
+      header: true,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'FerryDesk',
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 19, height: 1.2, letterSpacing: -0.3, fontWeight: FontWeight.w800, color: c.fg),
+          ),
+          if (personalBuildLabel.isNotEmpty) ...[
+            const SizedBox(height: 5),
+            Text(
+              personalBuildLabel,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, height: 1.35, color: c.muted),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 /// 光标的七个顶点：尖端在原点，高 23。
 const _pointer = [
   Offset(0, 0),
@@ -48,7 +87,7 @@ class AppIconMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Semantics(
     image: true,
-    label: 'ScreenFerry',
+    label: 'FerryDesk',
     child: CustomPaint(size: Size.square(size), painter: const _AppIconPainter()),
   );
 }

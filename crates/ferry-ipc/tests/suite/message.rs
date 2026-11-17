@@ -119,6 +119,23 @@ fn requests() -> Vec<Request> {
         Request::OpenPeerSettings {
             fingerprint: FP_PC.into(),
         },
+        Request::DisplayExtension {
+            action: ferry_types::DisplayAction::ExtendController,
+            fingerprint: Some(FP_PC.into()),
+            audio: true,
+        },
+        Request::SetDisplayPreferences {
+            audio: true,
+            shortcuts: ferry_types::DisplayShortcuts {
+                extend_controller: Some(b'1'),
+                stop: Some(b'0'),
+                ..Default::default()
+            },
+        },
+        Request::SetDisplayPlans {
+            plans: vec![display_plan()],
+        },
+        Request::RunDisplayPlan { id: 11 },
         Request::SendFiles {
             paths: vec![
                 "/Users/me/Desktop/证书.p12".into(),
@@ -144,6 +161,15 @@ fn requests() -> Vec<Request> {
         Request::DownloadUpdate,
         Request::CancelUpdate,
         Request::InstallUpdate,
+        Request::BeginAlignment {
+            id: 9,
+            fingerprint: FP_PC.into(),
+            local_screen: Some(1),
+            peer_screen: Some(2),
+            horizontal: false,
+            reversed: false,
+        },
+        Request::CancelAlignment { id: 9 },
         Request::DismissUpdate {
             version: "0.2.0".into(),
         },
@@ -261,6 +287,55 @@ fn state() -> State {
             needs_local_confirm: false,
             dismissed: String::new(),
         },
+        display_extension: Some(ferry_ipc::DisplayExtensionInfo {
+            ruler_peers: vec![],
+            plans: vec![display_plan()],
+            local_screens: vec![ferry_types::DisplayScreen {
+                id: 1,
+                bounds: ferry_types::Rect::new(0, 0, 1920, 1080),
+                primary: true,
+            }],
+            peer_screens: [(
+                FP_PC.to_owned(),
+                vec![ferry_types::DisplayScreen {
+                    id: 2,
+                    bounds: ferry_types::Rect::new(0, 0, 1280, 720),
+                    primary: true,
+                }],
+            )]
+            .into(),
+            configurable_peers: vec![FP_PC.into()],
+            active_plan: Some(11),
+            available_peers: vec![FP_PC.into()],
+            active_peer: Some(FP_PC.into()),
+            active: Some(ferry_types::DisplayAction::ExtendController),
+            running: true,
+            paused: false,
+            audio: true,
+            shortcuts: ferry_types::DisplayShortcuts {
+                extend_controller: Some(b'1'),
+                stop: Some(b'0'),
+                ..Default::default()
+            },
+        }),
+    }
+}
+
+fn display_plan() -> ferry_types::DisplayPlan {
+    ferry_types::DisplayPlan {
+        id: 11,
+        name: "工作副屏".into(),
+        peer: FP_PC.into(),
+        local_source: false,
+        options: ferry_types::DisplayOptions {
+            source_screen: Some(2),
+            viewer_screen: Some(1),
+            side: Side::Left,
+            primary: ferry_types::DisplayPrimary::Viewer,
+            alignment: Default::default(),
+        },
+        audio: false,
+        shortcut: Some(b'2'),
     }
 }
 
@@ -296,6 +371,18 @@ fn notices() -> Vec<Notice> {
         ..state()
     };
     vec![
+        Notice::AlignmentResult {
+            id: 9,
+            alignment: Some(ferry_types::EdgeAlignment {
+                offset: 200,
+                span: 600,
+                contact: Some(ferry_types::EdgeContact {
+                    local: [200, 800],
+                    remote: [0, 1000],
+                }),
+            }),
+            error: None,
+        },
         Notice::Welcome { version: VERSION },
         Notice::State {
             state: Box::new(state()),

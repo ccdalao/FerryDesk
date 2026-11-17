@@ -15,7 +15,10 @@ static bool ActivateRunningInstance() {
     return false;
   }
   // 主窗口创建后立即显示（还在启动时显示底色和图标），找到就带到前面。
-  HWND existing = ::FindWindowW(L"FLUTTER_RUNNER_WIN32_WINDOW", L"ScreenFerry");
+  HWND existing = ::FindWindowW(L"FLUTTER_RUNNER_WIN32_WINDOW", L"FerryDesk");
+  if (existing == nullptr) {
+    existing = ::FindWindowW(L"FLUTTER_RUNNER_WIN32_WINDOW", L"ScreenFerry");
+  }
   if (existing != nullptr) {
     ::ShowWindow(existing, ::IsIconic(existing) ? SW_RESTORE : SW_SHOW);
     ::SetForegroundWindow(existing);
@@ -64,7 +67,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   Win32Window::Size size(width, height);
 
   FlutterWindow window(project);
-  if (!window.Create(L"ScreenFerry", origin, size)) {
+  if (!window.Create(L"FerryDesk", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

@@ -15,7 +15,17 @@ void main() {
     final app = '${root.path}/ScreenFerry.app';
     File('$app/Contents/MacOS/screenferry').createSync(recursive: true);
     expect(daemonLocation(settingsExe(app)), app);
-  });
+  }, skip: Platform.isWindows);
+
+  test('Windows 安装目录中的设置界面找到同包后台', () {
+    final app = root.path;
+    final executable = '$app${Platform.pathSeparator}settings${Platform.pathSeparator}screenferry-settings.exe';
+    final daemon = File('$app${Platform.pathSeparator}screenferry.exe');
+    daemon.createSync();
+    expect(daemonLocation(executable), daemon.path);
+    daemon.deleteSync();
+    expect(daemonLocation(executable), isNull);
+  }, skip: !Platform.isWindows);
 
   test('外层应用里没有后台程序时找不到', () {
     final app = '${root.path}/ScreenFerry.app';

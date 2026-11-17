@@ -5,11 +5,15 @@
 
 #![forbid(unsafe_code)]
 
+mod alignment;
 pub mod capsule;
 pub mod clip_format;
+mod display_session;
+mod display_transport;
 mod edge_switch;
 pub mod file_name;
 mod input_lease;
+mod input_queue;
 mod key_mapper;
 mod layout;
 mod neighbors;
@@ -18,8 +22,14 @@ mod redact;
 mod warp_jump;
 mod wheel_scale;
 
+pub use alignment::{alignment_from_points, alignment_ruler_scene};
+pub use display_session::{
+    DisplaySession, DisplaySessionKey, calibrated_display_crossing, display_extension_bounds,
+};
+pub use display_transport::{MediaBitrate, MediaRecovery};
 pub use edge_switch::{EdgeSwitch, Transition};
 pub use input_lease::{INPUT_LEASE, InputLease, MAX_INPUT_REQUEST_MS};
+pub use input_queue::InputQueue;
 pub use key_mapper::KeyMapper;
 pub use layout::{Side, bounds};
 pub use neighbors::{Neighbors, Place};

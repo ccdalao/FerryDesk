@@ -66,6 +66,20 @@ fn neighbors_on_the_same_side_share_the_edge_in_order() {
 }
 
 #[test]
+fn an_excluded_neighbor_does_not_claim_the_local_edge() {
+    let mut n = three();
+    assert_eq!(
+        n.local_motion_excluding(Point::new(999, 100), 4, 0, Instant::now(), 1),
+        None
+    );
+    assert_eq!(n.active(), None);
+    assert!(matches!(
+        n.local_motion_excluding(Point::new(999, 600), 4, 0, Instant::now(), 1),
+        Some((2, Transition::Enter { .. }))
+    ));
+}
+
+#[test]
 fn while_on_a_neighbor_other_edges_do_not_switch() {
     let mut n = three();
     enter(&mut n, Point::new(999, 100), 4);

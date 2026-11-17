@@ -18,7 +18,7 @@
 
 ## 检查清单 / Checklist
 
-- [ ] 本地跑过 [AGENTS.md](https://github.com/icloudza/screen-ferry/blob/main/AGENTS.md) 第 12 节的检查（改了 `app/` 的还有 Flutter 那三项）/ Ran the checks in AGENTS.md section 12
+- [ ] 本地跑过 [AGENTS.md](https://github.com/ccdalao/FerryDesk/blob/main/AGENTS.md) 第 12 节的检查（改了 `app/` 的还有 Flutter 那三项）/ Ran the checks in AGENTS.md section 12
 - [ ] 用户看得到的改动记进了 `CHANGELOG.md` 的 `[Unreleased]` / User-visible changes are in `CHANGELOG.md` under `[Unreleased]`
 - [ ] 改了界面文字的，中英文 ARB 都改了；改了 README 的，两份都改了 / UI strings updated in both ARB files; both READMEs updated
 - [ ] 改了线协议、本机通信或配置结构的，更新了 `docs/protocol.md` / `docs/ipc.md`，配置升了 `schema_version` 并带迁移 / Protocol, IPC or config changes are documented, with a `schema_version` bump and migration

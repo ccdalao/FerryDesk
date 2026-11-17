@@ -7,6 +7,66 @@ use std::ops::RangeInclusive;
 
 use serde::{Deserialize, Serialize};
 
+/// 两端尺子上用户选定的接缝，坐标沿屏幕边缘以千分位保存。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EdgeContact {
+    pub local: [u16; 2],
+    pub remote: [u16; 2],
+}
+
+impl EdgeContact {
+    pub fn valid(self) -> bool {
+        [self.local, self.remote]
+            .into_iter()
+            .all(|[start, end]| end <= 1000 && end.saturating_sub(start) >= 50)
+    }
+}
+
+/// 远端整条接缝在本机接缝上的物理跨度；千分比刻度，与分辨率无关。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EdgeAlignment {
+    pub offset: i32,
+    pub span: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contact: Option<EdgeContact>,
+}
+impl Default for EdgeAlignment {
+    fn default() -> Self {
+        Self {
+            offset: 0,
+            span: 1000,
+            contact: None,
+        }
+    }
+}
+impl EdgeAlignment {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+    pub fn clamped(self) -> Self {
+        let span = self.span.clamp(100, 10000);
+        Self {
+            span,
+            offset: self.offset.clamp(1 - span as i32, 999),
+            contact: self.contact.filter(|contact| contact.valid()),
+        }
+    }
+    /// 另一端观察同一条物理接缝时的比例与偏移。
+    pub fn reversed(self) -> Self {
+        let a = self.clamped();
+        Self {
+            offset: (-i64::from(a.offset) * 1000 / i64::from(a.span)) as i32,
+            span: 1_000_000 / a.span,
+            contact: a.contact.map(|contact| EdgeContact {
+                local: contact.remote,
+                remote: contact.local,
+            }),
+        }
+        .clamped()
+    }
+}
+
 /// 修饰键方案。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -118,6 +178,8 @@ pub struct DeviceSettings {
     pub text_shortcuts: bool,
     /// 光标要在朝向它的边上停这么久（毫秒）才切过去，防止误切。0 为立即切换。
     pub edge_delay_ms: u32,
+    #[serde(skip_serializing_if = "EdgeAlignment::is_default")]
+    pub alignment: EdgeAlignment,
     /// 和它之间同步剪贴板（总开关关着时不同步）。
     pub clipboard: bool,
     /// 能把文件拖给它。
@@ -154,6 +216,7 @@ impl DeviceSettings {
             self.pointer_dpi = self.pointer_dpi.clamp(*range.start(), *range.end());
         }
         self.edge_delay_ms = self.edge_delay_ms.min(Self::MAX_EDGE_DELAY_MS);
+        self.alignment = self.alignment.clamped();
         self
     }
 
@@ -179,6 +242,7 @@ impl Default for DeviceSettings {
             modifiers: ModifierPreset::Habit,
             text_shortcuts: false,
             edge_delay_ms: 0,
+            alignment: EdgeAlignment::default(),
             clipboard: true,
             files: true,
             custom_modifiers: ModifierMap::PLAIN,

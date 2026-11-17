@@ -11,6 +11,7 @@ mod autostart;
 mod capture;
 mod clipboard;
 mod display;
+mod display_stream;
 mod error;
 mod event_loop;
 mod inject;
@@ -23,9 +24,16 @@ pub use autostart::Autostart;
 pub use capture::{CaptureEvent, CaptureSink, Captured, InputCapture};
 pub use clipboard::Clipboard;
 pub use display::Displays;
+pub use display_stream::{
+    DisplayBackend, DisplayDatagram, DisplaySource, DisplayTransportStats, DisplayViewer,
+    MediaFrame, MediaTrack,
+};
 pub use error::{Error, Result};
 pub use event_loop::{Dispatcher, EventLoop, MainTask};
 pub use inject::InputInject;
 pub use overlay::{Overlay, OverlayEvent, OverlaySink};
 pub use permission::Permissions;
 pub use update::{Prepared, Updater};
+
+mod network;
+pub use network::{NetworkClass, NetworkFlow, NetworkPriority};

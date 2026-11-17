@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use ferry_net::Framed;
@@ -194,7 +194,7 @@ where
     }
 
     async fn run(&mut self, start: Start) -> Result<()> {
-        let count = self.lock().change_count();
+        let count = self.with_clipboard(|c| c.change_count()).await?;
         self.seen = count;
         if self.sync && start == Start::Announce {
             self.offer_local().await?;
@@ -246,13 +246,13 @@ where
                 }
             }
             Message::ClipboardRequest(request) => self.serve(request).await?,
-            Message::Chunk(chunk) => self.on_chunk(chunk)?,
+            Message::Chunk(chunk) => self.on_chunk(chunk).await?,
             Message::Cancel(cancel) => {
                 if let Some(fetch) = self.fetch.as_mut()
                     && fetch.pending.remove(&cancel.transfer).is_some()
                 {
                     debug!(reason = cancel.reason.0, "对方取消了一个格式的传输");
-                    self.finish_if_done()?;
+                    self.finish_if_done().await?;
                 }
             }
             message @ (Message::FileOffer(_)
@@ -272,17 +272,16 @@ where
 
     /// 本机剪贴板变了就通告。
     async fn poll(&mut self) -> Result<()> {
-        if self.lock().change_count() != self.seen {
+        if self.with_clipboard(|c| c.change_count()).await? != self.seen {
             self.offer_local().await?;
         }
         Ok(())
     }
 
     async fn offer_local(&mut self) -> Result<()> {
-        let (count, content) = {
-            let mut clipboard = self.lock();
-            (clipboard.change_count(), clipboard.read())
-        };
+        let (count, content) = self
+            .with_clipboard(|clipboard| (clipboard.change_count(), clipboard.read()))
+            .await?;
         self.seen = count;
         let content = content.unwrap_or_else(|e| {
             warn!("读取本机剪贴板失败：{e}");
@@ -326,7 +325,7 @@ where
         let Some(offer) = self.offer.take() else {
             return Ok(());
         };
-        let supported = self.lock().formats();
+        let supported = self.with_clipboard(|c| c.formats()).await?;
         let limit = self.report.limit.get();
         let mut fetch = Fetch {
             seq: offer.seq,
@@ -404,7 +403,7 @@ where
         Ok(())
     }
 
-    fn on_chunk(&mut self, chunk: Chunk) -> Result<()> {
+    async fn on_chunk(&mut self, chunk: Chunk) -> Result<()> {
         let Some(fetch) = self.fetch.as_mut() else {
             return Ok(());
         };
@@ -418,13 +417,13 @@ where
         if chunk.last {
             let (format, _, data) = fetch.pending.remove(&chunk.transfer).expect("刚刚查到过");
             fetch.done.insert(format, data);
-            self.finish_if_done()?;
+            self.finish_if_done().await?;
         }
         Ok(())
     }
 
     /// 所有格式都到齐（或被取消）后写入本机剪贴板。
-    fn finish_if_done(&mut self) -> Result<()> {
+    async fn finish_if_done(&mut self) -> Result<()> {
         if self.fetch.as_ref().is_some_and(|f| !f.pending.is_empty()) {
             return Ok(());
         }
@@ -434,19 +433,21 @@ where
         if fetch.done.is_empty() {
             return Ok(());
         }
-        let written = self.lock().write(&fetch.done);
+        let (written, content) = self
+            .with_clipboard(move |clipboard| (clipboard.write(&fetch.done), fetch.done))
+            .await?;
         match written {
             Ok(count) => {
                 self.seen = count;
                 info!(
                     seq = fetch.seq,
-                    bytes = fetch.done.total_len(),
+                    bytes = content.total_len(),
                     "已同步对方的剪贴板"
                 );
                 self.report.events.emit(Event::Clipboard {
                     peer: self.report.peer,
                     to_peer: false,
-                    summary: ClipSummary::of(&fetch.done),
+                    summary: ClipSummary::of(&content),
                 });
             }
             Err(e) => warn!("写入本机剪贴板失败：{e}"),
@@ -458,8 +459,19 @@ where
         *self.active.borrow()
     }
 
-    fn lock(&self) -> MutexGuard<'_, C> {
-        self.clipboard.lock().unwrap_or_else(|e| e.into_inner())
+    /// 剪贴板可能等待其他进程渲染内容，图片转换也可能很慢。锁与系统调用都在阻塞池上执行，
+    /// 不能堵住单线程运行时的键鼠、心跳或退出快捷键。
+    async fn with_clipboard<T: Send + 'static>(
+        &mut self,
+        operation: impl FnOnce(&mut C) -> T + Send + 'static,
+    ) -> Result<T> {
+        let clipboard = Arc::clone(&self.clipboard);
+        tokio::task::spawn_blocking(move || {
+            let mut clipboard = clipboard.lock().unwrap_or_else(|e| e.into_inner());
+            operation(&mut clipboard)
+        })
+        .await
+        .map_err(|e| std::io::Error::other(format!("剪贴板工作线程失败：{e}")).into())
     }
 }
 

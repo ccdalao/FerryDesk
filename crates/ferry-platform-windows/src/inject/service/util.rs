@@ -53,3 +53,28 @@ pub(super) fn ticks() -> u64 {
     // SAFETY: 无参数的只读单调时钟查询。
     unsafe { GetTickCount64() }
 }
+
+/// 服务/代理没有控制台，只记录阶段和系统错误，不记录输入正文、公钥或用户配置。
+pub(super) fn report_error(stage: &str, error: &Error) {
+    use windows::Win32::System::EventLog::{
+        DeregisterEventSource, EVENTLOG_WARNING_TYPE, RegisterEventSourceW, ReportEventW,
+    };
+    use windows::core::{HSTRING, PCWSTR, w};
+    let message = HSTRING::from(format!("{stage}：{error}"));
+    // SAFETY: 固定本机事件源，字符串仅在同步调用期间借用；事件源句柄由本次调用关闭。
+    unsafe {
+        if let Ok(source) = RegisterEventSourceW(PCWSTR::null(), w!("ScreenFerryInput")) {
+            let _ = ReportEventW(
+                source,
+                EVENTLOG_WARNING_TYPE,
+                0,
+                1,
+                None,
+                0,
+                Some(&[PCWSTR(message.as_ptr())]),
+                None,
+            );
+            let _ = DeregisterEventSource(source);
+        }
+    }
+}

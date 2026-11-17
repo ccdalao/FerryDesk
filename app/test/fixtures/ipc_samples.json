@@ -1,6 +1,25 @@
 {
   "notices": [
     {
+      "alignment": {
+        "contact": {
+          "local": [
+            200,
+            800
+          ],
+          "remote": [
+            0,
+            1000
+          ]
+        },
+        "offset": 200,
+        "span": 600
+      },
+      "error": null,
+      "id": 9,
+      "type": "alignment_result"
+    },
+    {
       "type": "welcome",
       "version": 2
     },
@@ -27,6 +46,67 @@
           "preview": "周三例会纪要",
           "rich": true,
           "to_peer": true
+        },
+        "display_extension": {
+          "active": "extend_controller",
+          "active_peer": "3f9a12c477e0b1d2aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55",
+          "active_plan": 11,
+          "audio": true,
+          "available_peers": [
+            "3f9a12c477e0b1d2aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55"
+          ],
+          "configurable_peers": [
+            "3f9a12c477e0b1d2aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55"
+          ],
+          "local_screens": [
+            {
+              "bounds": {
+                "height": 1080,
+                "width": 1920,
+                "x": 0,
+                "y": 0
+              },
+              "id": 1,
+              "primary": true
+            }
+          ],
+          "paused": false,
+          "peer_screens": {
+            "3f9a12c477e0b1d2aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55": [
+              {
+                "bounds": {
+                  "height": 720,
+                  "width": 1280,
+                  "x": 0,
+                  "y": 0
+                },
+                "id": 2,
+                "primary": true
+              }
+            ]
+          },
+          "plans": [
+            {
+              "audio": false,
+              "id": 11,
+              "local_source": false,
+              "name": "工作副屏",
+              "options": {
+                "primary": "viewer",
+                "side": "left",
+                "source_screen": 2,
+                "viewer_screen": 1
+              },
+              "peer": "3f9a12c477e0b1d2aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55",
+              "shortcut": 50
+            }
+          ],
+          "ruler_peers": [],
+          "running": true,
+          "shortcuts": {
+            "extend_controller": 49,
+            "stop": 48
+          }
         },
         "found": [
           {
@@ -172,6 +252,67 @@
           }
         ],
         "clipboard": null,
+        "display_extension": {
+          "active": "extend_controller",
+          "active_peer": "3f9a12c477e0b1d2aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55",
+          "active_plan": 11,
+          "audio": true,
+          "available_peers": [
+            "3f9a12c477e0b1d2aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55"
+          ],
+          "configurable_peers": [
+            "3f9a12c477e0b1d2aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55"
+          ],
+          "local_screens": [
+            {
+              "bounds": {
+                "height": 1080,
+                "width": 1920,
+                "x": 0,
+                "y": 0
+              },
+              "id": 1,
+              "primary": true
+            }
+          ],
+          "paused": false,
+          "peer_screens": {
+            "3f9a12c477e0b1d2aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55": [
+              {
+                "bounds": {
+                  "height": 720,
+                  "width": 1280,
+                  "x": 0,
+                  "y": 0
+                },
+                "id": 2,
+                "primary": true
+              }
+            ]
+          },
+          "plans": [
+            {
+              "audio": false,
+              "id": 11,
+              "local_source": false,
+              "name": "工作副屏",
+              "options": {
+                "primary": "viewer",
+                "side": "left",
+                "source_screen": 2,
+                "viewer_screen": 1
+              },
+              "peer": "3f9a12c477e0b1d2aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55",
+              "shortcut": 50
+            }
+          ],
+          "ruler_peers": [],
+          "running": true,
+          "shortcuts": {
+            "extend_controller": 49,
+            "stop": 48
+          }
+        },
         "found": [
           {
             "addr": "192.168.2.31",
@@ -539,6 +680,43 @@
       "type": "open_peer_settings"
     },
     {
+      "action": "extend_controller",
+      "audio": true,
+      "fingerprint": "3f9a12c477e0b1d2aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55",
+      "type": "display_extension"
+    },
+    {
+      "audio": true,
+      "shortcuts": {
+        "extend_controller": 49,
+        "stop": 48
+      },
+      "type": "set_display_preferences"
+    },
+    {
+      "plans": [
+        {
+          "audio": false,
+          "id": 11,
+          "local_source": false,
+          "name": "工作副屏",
+          "options": {
+            "primary": "viewer",
+            "side": "left",
+            "source_screen": 2,
+            "viewer_screen": 1
+          },
+          "peer": "3f9a12c477e0b1d2aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55",
+          "shortcut": 50
+        }
+      ],
+      "type": "set_display_plans"
+    },
+    {
+      "id": 11,
+      "type": "run_display_plan"
+    },
+    {
       "paths": [
         "/Users/me/Desktop/证书.p12",
         "/Users/me/Desktop/设计稿"
@@ -589,6 +767,19 @@
     },
     {
       "type": "install_update"
+    },
+    {
+      "fingerprint": "3f9a12c477e0b1d2aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55",
+      "horizontal": false,
+      "id": 9,
+      "local_screen": 1,
+      "peer_screen": 2,
+      "reversed": false,
+      "type": "begin_alignment"
+    },
+    {
+      "id": 9,
+      "type": "cancel_alignment"
     },
     {
       "type": "dismiss_update",

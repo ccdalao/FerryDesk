@@ -13,6 +13,7 @@ import '../pages/settings_page.dart';
 import '../state/app_scope.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
+import '../widgets/brand.dart';
 import '../widgets/daemon_offline.dart';
 import '../widgets/pairing_dialog.dart';
 import '../widgets/toast.dart';
@@ -81,10 +82,28 @@ class HomeShell extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, box) {
             if (box.maxWidth < phoneWidth) {
-              return Column(
+              return Stack(
                 children: [
-                  Expanded(child: pages),
-                  const BottomNav(),
+                  Column(
+                    children: [
+                      const SizedBox(height: 72),
+                      Expanded(child: pages),
+                      const BottomNav(),
+                    ],
+                  ),
+                  const Positioned(
+                    top: 44,
+                    left: 20,
+                    right: 20,
+                    height: 48,
+                    child: Row(
+                      children: [
+                        AppIconMark(size: 38),
+                        SizedBox(width: 12),
+                        Expanded(child: ProductTitle()),
+                      ],
+                    ),
+                  ),
                 ],
               );
             }

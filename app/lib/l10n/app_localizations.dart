@@ -92,10 +92,130 @@ abstract class AppLocalizations {
   /// A list of this localizations delegate's supported locales.
   static const List<Locale> supportedLocales = <Locale>[Locale('en'), Locale('zh')];
 
+  /// No description provided for @displayPlans.
+  ///
+  /// In zh, this message translates to:
+  /// **'副屏方案'**
+  String get displayPlans;
+
+  /// No description provided for @displayPlanAdd.
+  ///
+  /// In zh, this message translates to:
+  /// **'新建方案'**
+  String get displayPlanAdd;
+
+  /// No description provided for @displayPlanEdit.
+  ///
+  /// In zh, this message translates to:
+  /// **'编辑方案'**
+  String get displayPlanEdit;
+
+  /// No description provided for @displayPlanDelete.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除方案'**
+  String get displayPlanDelete;
+
+  /// No description provided for @displayPlanApply.
+  ///
+  /// In zh, this message translates to:
+  /// **'应用方案'**
+  String get displayPlanApply;
+
+  /// No description provided for @displayPlanName.
+  ///
+  /// In zh, this message translates to:
+  /// **'方案名称'**
+  String get displayPlanName;
+
+  /// No description provided for @displayPlanDesktop.
+  ///
+  /// In zh, this message translates to:
+  /// **'扩展哪台电脑的桌面'**
+  String get displayPlanDesktop;
+
+  /// No description provided for @displayPlanSourceScreen.
+  ///
+  /// In zh, this message translates to:
+  /// **'桌面来源电脑的实体屏幕'**
+  String get displayPlanSourceScreen;
+
+  /// No description provided for @displayPlanViewerScreen.
+  ///
+  /// In zh, this message translates to:
+  /// **'另一台电脑用于显示副屏的屏幕'**
+  String get displayPlanViewerScreen;
+
+  /// No description provided for @displayPlanPrimary.
+  ///
+  /// In zh, this message translates to:
+  /// **'Windows 主显示器'**
+  String get displayPlanPrimary;
+
+  /// No description provided for @displayPlanSourcePrimary.
+  ///
+  /// In zh, this message translates to:
+  /// **'桌面来源的实体屏为主屏'**
+  String get displayPlanSourcePrimary;
+
+  /// No description provided for @displayPlanViewerPrimary.
+  ///
+  /// In zh, this message translates to:
+  /// **'另一台电脑显示的扩展屏为主屏'**
+  String get displayPlanViewerPrimary;
+
+  /// No description provided for @displayPlanPosition.
+  ///
+  /// In zh, this message translates to:
+  /// **'扩展屏相对于来源实体屏的位置'**
+  String get displayPlanPosition;
+
+  /// No description provided for @displayPlanAuto.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动选择'**
+  String get displayPlanAuto;
+
+  /// No description provided for @displayPlanScreen.
+  ///
+  /// In zh, this message translates to:
+  /// **'屏幕'**
+  String get displayPlanScreen;
+
+  /// No description provided for @displayPlanMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'屏幕不可用，请重新选择'**
+  String get displayPlanMissing;
+
+  /// No description provided for @displayPlanUpgrade.
+  ///
+  /// In zh, this message translates to:
+  /// **'屏幕方案需要两台都升级并连接'**
+  String get displayPlanUpgrade;
+
+  /// No description provided for @displayPlanHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'方案保存在本机，可从设置、托盘或快捷键应用。取消拓展会恢复原主屏和位置。'**
+  String get displayPlanHint;
+
+  /// No description provided for @displayPlanPreviewMain.
+  ///
+  /// In zh, this message translates to:
+  /// **'主屏'**
+  String get displayPlanPreviewMain;
+
+  /// No description provided for @displayPlanPreviewSecondary.
+  ///
+  /// In zh, this message translates to:
+  /// **'副屏'**
+  String get displayPlanPreviewSecondary;
+
   /// No description provided for @appTitle.
   ///
   /// In zh, this message translates to:
-  /// **'ScreenFerry'**
+  /// **'FerryDesk'**
   String get appTitle;
 
   /// No description provided for @commonSave.
@@ -299,13 +419,13 @@ abstract class AppLocalizations {
   /// No description provided for @problemPermission.
   ///
   /// In zh, this message translates to:
-  /// **'需要在系统设置的“隐私与安全性”中允许 ScreenFerry 控制键盘和鼠标'**
+  /// **'需要在系统设置的“隐私与安全性”中允许 FerryDesk 控制键盘和鼠标'**
   String get problemPermission;
 
   /// No description provided for @problemPortInUse.
   ///
   /// In zh, this message translates to:
-  /// **'端口 {port} 被占用：可能还开着另一个键鼠共享软件或另一份 ScreenFerry'**
+  /// **'端口 {port} 被占用：可能还开着另一个键鼠共享软件或另一份 FerryDesk'**
   String problemPortInUse(int port);
 
   /// No description provided for @offlineConnecting.
@@ -323,7 +443,7 @@ abstract class AppLocalizations {
   /// No description provided for @offlineStartHint.
   ///
   /// In zh, this message translates to:
-  /// **'请先启动 ScreenFerry，连上后会自动显示。'**
+  /// **'请先启动 FerryDesk，连上后会自动显示。'**
   String get offlineStartHint;
 
   /// No description provided for @offlineAutoConnect.
@@ -335,7 +455,7 @@ abstract class AppLocalizations {
   /// No description provided for @offlineStartFailed.
   ///
   /// In zh, this message translates to:
-  /// **'启动失败，请在“应用程序”中打开 ScreenFerry'**
+  /// **'启动失败，请在“应用程序”中打开 FerryDesk'**
   String get offlineStartFailed;
 
   /// No description provided for @offlineStarting.
@@ -347,7 +467,7 @@ abstract class AppLocalizations {
   /// No description provided for @offlineStart.
   ///
   /// In zh, this message translates to:
-  /// **'启动 ScreenFerry'**
+  /// **'启动 FerryDesk'**
   String get offlineStart;
 
   /// No description provided for @offlineRetrying.
@@ -407,7 +527,7 @@ abstract class AppLocalizations {
   /// No description provided for @aboutTagline.
   ///
   /// In zh, this message translates to:
-  /// **'在多台电脑之间共享一套键盘鼠标'**
+  /// **'双向扩展屏与键鼠共享'**
   String get aboutTagline;
 
   /// No description provided for @aboutCheckUpdates.
@@ -425,7 +545,7 @@ abstract class AppLocalizations {
   /// No description provided for @aboutAuthor.
   ///
   /// In zh, this message translates to:
-  /// **'作者主页'**
+  /// **'项目维护者'**
   String get aboutAuthor;
 
   /// No description provided for @aboutLicense.
@@ -599,7 +719,7 @@ abstract class AppLocalizations {
   /// No description provided for @dialNotWaitingInviteBody.
   ///
   /// In zh, this message translates to:
-  /// **'确认那台电脑开着 ScreenFerry，并且选的是“被控制”。它的版本太旧时也不能被邀请，需要先升级。'**
+  /// **'确认那台电脑开着 FerryDesk，并且选的是“被控制”。它的版本太旧时也不能被邀请，需要先升级。'**
   String get dialNotWaitingInviteBody;
 
   /// No description provided for @dialNotWaitingTitle.
@@ -611,7 +731,7 @@ abstract class AppLocalizations {
   /// No description provided for @dialNotWaitingBody.
   ///
   /// In zh, this message translates to:
-  /// **'确认那台电脑开着 ScreenFerry，并且在设置里选的是“控制别的电脑”。'**
+  /// **'确认那台电脑开着 FerryDesk，并且在设置里选的是“控制别的电脑”。'**
   String get dialNotWaitingBody;
 
   /// No description provided for @dialUnreachableTitle.
@@ -623,20 +743,20 @@ abstract class AppLocalizations {
   /// No description provided for @dialUnreachableBody.
   ///
   /// In zh, this message translates to:
-  /// **'确认两台在同一个网络里、地址没有填错。Windows 第一次运行 ScreenFerry 时会询问防火墙，请允许它通过。'**
+  /// **'确认两台在同一个网络里、地址没有填错。Windows 第一次运行 FerryDesk 时会询问防火墙，请允许它通过。'**
   String get dialUnreachableBody;
 
-  /// No description provided for @dialNotScreenFerryTitle.
+  /// No description provided for @dialNotFerryDeskTitle.
   ///
   /// In zh, this message translates to:
-  /// **'{address} 上不是 ScreenFerry'**
-  String dialNotScreenFerryTitle(String address);
+  /// **'{address} 上不是 FerryDesk'**
+  String dialNotFerryDeskTitle(String address);
 
-  /// No description provided for @dialNotScreenFerryBody.
+  /// No description provided for @dialNotFerryDeskBody.
   ///
   /// In zh, this message translates to:
   /// **'确认地址和端口没有填错。'**
-  String get dialNotScreenFerryBody;
+  String get dialNotFerryDeskBody;
 
   /// No description provided for @dialIncompatibleTitle.
   ///
@@ -647,7 +767,7 @@ abstract class AppLocalizations {
   /// No description provided for @dialIncompatibleBody.
   ///
   /// In zh, this message translates to:
-  /// **'两台电脑上的 ScreenFerry 版本相差太多，请都升级到最新版。'**
+  /// **'两台电脑上的 FerryDesk 版本相差太多，请都升级到最新版。'**
   String get dialIncompatibleBody;
 
   /// No description provided for @dialBusyTitle.
@@ -713,7 +833,7 @@ abstract class AppLocalizations {
   /// No description provided for @dialInviteHint.
   ///
   /// In zh, this message translates to:
-  /// **'那台电脑要开着 ScreenFerry，选的是“被控制”。地址在它的「设备」页上；不写端口时用 24811。'**
+  /// **'那台电脑要开着 FerryDesk，选的是“被控制”。地址在它的「设备」页上；不写端口时用 24811。'**
   String get dialInviteHint;
 
   /// No description provided for @dialConnectHint.
@@ -839,7 +959,7 @@ abstract class AppLocalizations {
   /// No description provided for @diagVerboseOff.
   ///
   /// In zh, this message translates to:
-  /// **'排查连接问题时打开，会多记一些细节。重启 ScreenFerry 后自动关闭'**
+  /// **'排查连接问题时打开，会多记一些细节。重启 FerryDesk 后自动关闭'**
   String get diagVerboseOff;
 
   /// No description provided for @diagVerboseJustOn.
@@ -1433,7 +1553,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsAbout.
   ///
   /// In zh, this message translates to:
-  /// **'关于 ScreenFerry'**
+  /// **'关于 FerryDesk'**
   String get settingsAbout;
 
   /// No description provided for @settingsVersion.
@@ -1577,7 +1697,7 @@ abstract class AppLocalizations {
   /// No description provided for @layoutEmpty.
   ///
   /// In zh, this message translates to:
-  /// **'还没有配对的设备。在另一台电脑上运行 ScreenFerry 并配对后，它会出现在本机旁边'**
+  /// **'还没有配对的设备。在另一台电脑上运行 FerryDesk 并配对后，它会出现在本机旁边'**
   String get layoutEmpty;
 
   /// No description provided for @layoutDropAt.
@@ -1667,7 +1787,7 @@ abstract class AppLocalizations {
   /// No description provided for @devicesNonePairedHint.
   ///
   /// In zh, this message translates to:
-  /// **'在另一台电脑上运行 ScreenFerry，两边核对配对码后会出现在这里。'**
+  /// **'在另一台电脑上运行 FerryDesk，两边核对配对码后会出现在这里。'**
   String get devicesNonePairedHint;
 
   /// No description provided for @devicesFound.
@@ -1703,7 +1823,7 @@ abstract class AppLocalizations {
   /// No description provided for @devicesWaitingHint.
   ///
   /// In zh, this message translates to:
-  /// **'在另一台电脑上运行 ScreenFerry 并选择本机后，这里会弹出配对码请你核对。'**
+  /// **'在另一台电脑上运行 FerryDesk 并选择本机后，这里会弹出配对码请你核对。'**
   String get devicesWaitingHint;
 
   /// No description provided for @devicesWaitingHintAddress.
@@ -2402,6 +2522,60 @@ abstract class AppLocalizations {
   /// **'连接'**
   String get deviceConnection;
 
+  /// No description provided for @displayExtension.
+  ///
+  /// In zh, this message translates to:
+  /// **'扩展屏'**
+  String get displayExtension;
+
+  /// No description provided for @displayShortcuts.
+  ///
+  /// In zh, this message translates to:
+  /// **'扩展屏快捷键'**
+  String get displayShortcuts;
+
+  /// No description provided for @displayExtendController.
+  ///
+  /// In zh, this message translates to:
+  /// **'用被控电脑屏幕扩展主控'**
+  String get displayExtendController;
+
+  /// No description provided for @displayExtendControlled.
+  ///
+  /// In zh, this message translates to:
+  /// **'用主控电脑屏幕扩展被控'**
+  String get displayExtendControlled;
+
+  /// No description provided for @displayStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'开启'**
+  String get displayStart;
+
+  /// No description provided for @displayAudio.
+  ///
+  /// In zh, this message translates to:
+  /// **'播放扩展端的声音'**
+  String get displayAudio;
+
+  /// No description provided for @displayStop.
+  ///
+  /// In zh, this message translates to:
+  /// **'取消副屏拓展'**
+  String get displayStop;
+
+  /// No description provided for @displayUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'请连接支持扩展屏的设备'**
+  String get displayUnavailable;
+
+  /// No description provided for @displayStarting.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在等待第一帧…'**
+  String get displayStarting;
+
   /// No description provided for @deviceThisDevice.
   ///
   /// In zh, this message translates to:
@@ -2681,7 +2855,7 @@ abstract class AppLocalizations {
   /// No description provided for @phStarted.
   ///
   /// In zh, this message translates to:
-  /// **'ScreenFerry 已启动'**
+  /// **'FerryDesk 已启动'**
   String get phStarted;
 
   /// No description provided for @phStartedServer.
@@ -3035,7 +3209,7 @@ abstract class AppLocalizations {
   /// No description provided for @toastPeerSettingsUnsupported.
   ///
   /// In zh, this message translates to:
-  /// **'{name} 上的 ScreenFerry 版本较旧，请在那台电脑上打开设置'**
+  /// **'{name} 上的 FerryDesk 版本较旧，请在那台电脑上打开设置'**
   String toastPeerSettingsUnsupported(String name);
 
   /// No description provided for @toastDiagnosticsMissing.
@@ -3137,7 +3311,7 @@ abstract class AppLocalizations {
   /// No description provided for @aboutVersionLine.
   ///
   /// In zh, this message translates to:
-  /// **'版本 {version} · 在多台电脑之间共享一套键盘鼠标'**
+  /// **'版本 {version} · 双向扩展屏与键鼠共享'**
   String aboutVersionLine(String version);
 
   /// No description provided for @updateCurrent.
@@ -3239,7 +3413,7 @@ abstract class AppLocalizations {
   /// No description provided for @updateInstallingHint.
   ///
   /// In zh, this message translates to:
-  /// **'ScreenFerry 会自己重新打开，这个窗口随后重新连上'**
+  /// **'FerryDesk 会自己重新打开，这个窗口随后重新连上'**
   String get updateInstallingHint;
 
   /// No description provided for @updateManual.
@@ -3371,7 +3545,7 @@ abstract class AppLocalizations {
   /// No description provided for @updateBannerHint.
   ///
   /// In zh, this message translates to:
-  /// **'重启 ScreenFerry 完成更新，键鼠会断开约 5 秒'**
+  /// **'重启 FerryDesk 完成更新，键鼠会断开约 5 秒'**
   String get updateBannerHint;
 
   /// No description provided for @devicePeerCanUpdate.
@@ -3415,6 +3589,162 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'更新没有装上：{message}'**
   String toastUpdateFailed(String message);
+
+  /// No description provided for @displayPause.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂停扩展屏'**
+  String get displayPause;
+
+  /// No description provided for @displayResume.
+  ///
+  /// In zh, this message translates to:
+  /// **'恢复扩展屏'**
+  String get displayResume;
+
+  /// No description provided for @displayPauseShortcut.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂停／恢复扩展屏'**
+  String get displayPauseShortcut;
+
+  /// No description provided for @displayPauseHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂停后两台各用各的桌面；恢复时沿用刚才的方向和方案'**
+  String get displayPauseHint;
+
+  /// No description provided for @displayInputPriority.
+  ///
+  /// In zh, this message translates to:
+  /// **'鼠标响应优先'**
+  String get displayInputPriority;
+
+  /// No description provided for @displayInputPriorityHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'扩展期间由扩展窗口独占鼠标输入，可按 Ctrl+Alt+Esc 归还控制；持续拥塞时降低画质，链路稳定后恢复清晰度。'**
+  String get displayInputPriorityHint;
+
+  /// No description provided for @layoutDragExtensionHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'扩展桌面允许按住鼠标跨屏移动窗口；普通共享仍保留拖拽保护'**
+  String get layoutDragExtensionHint;
+
+  /// No description provided for @alignmentTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'屏幕对齐尺'**
+  String get alignmentTitle;
+
+  /// No description provided for @alignmentAdjust.
+  ///
+  /// In zh, this message translates to:
+  /// **'校准'**
+  String get alignmentAdjust;
+
+  /// No description provided for @alignmentHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'把本机接缝长度作为 100 格，按实际大小缩放另一块屏幕并拖动对齐。蓝色部分可以穿过，空白部分不会切屏。刻度为相对比例，不是实际厘米。'**
+  String get alignmentHint;
+
+  /// No description provided for @alignmentSize.
+  ///
+  /// In zh, this message translates to:
+  /// **'另一块屏幕的相对尺寸'**
+  String get alignmentSize;
+
+  /// No description provided for @alignmentOffset.
+  ///
+  /// In zh, this message translates to:
+  /// **'接缝偏移'**
+  String get alignmentOffset;
+
+  /// No description provided for @alignmentReset.
+  ///
+  /// In zh, this message translates to:
+  /// **'恢复整边对应'**
+  String get alignmentReset;
+
+  /// No description provided for @alignmentApply.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存对齐'**
+  String get alignmentApply;
+
+  /// No description provided for @alignmentPickHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'在两台实际屏幕上点选对应边界，程序自动对齐，不用调整数值。'**
+  String get alignmentPickHint;
+
+  /// No description provided for @alignmentPickStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'在两台屏幕显示尺子'**
+  String get alignmentPickStart;
+
+  /// No description provided for @alignmentPicking.
+  ///
+  /// In zh, this message translates to:
+  /// **'请在实屏尺上取点…'**
+  String get alignmentPicking;
+
+  /// No description provided for @alignmentPickSteps.
+  ///
+  /// In zh, this message translates to:
+  /// **'左右排列时尺子显示在两块屏幕右侧。请在每台尺子上各点两处相同实际高度的位置；先选上界，再选下界。上下排列时使用底部尺子。'**
+  String get alignmentPickSteps;
+
+  /// No description provided for @alignmentPickUpgrade.
+  ///
+  /// In zh, this message translates to:
+  /// **'两台电脑需连接并升级至支持实屏取点的版本。'**
+  String get alignmentPickUpgrade;
+
+  /// No description provided for @alignmentDefault.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前使用整条边缘对应。'**
+  String get alignmentDefault;
+
+  /// No description provided for @alignmentPicked.
+  ///
+  /// In zh, this message translates to:
+  /// **'已取点，保存后按所选边界对齐。'**
+  String get alignmentPicked;
+
+  /// No description provided for @aboutProject.
+  ///
+  /// In zh, this message translates to:
+  /// **'项目主页'**
+  String get aboutProject;
+
+  /// No description provided for @aboutLicenseDetail.
+  ///
+  /// In zh, this message translates to:
+  /// **'GPL-3.0-only · 保留上游 MIT / Apache-2.0 许可'**
+  String get aboutLicenseDetail;
+
+  /// No description provided for @aboutCredits.
+  ///
+  /// In zh, this message translates to:
+  /// **'开源致谢'**
+  String get aboutCredits;
+
+  /// No description provided for @aboutRestartBackend.
+  ///
+  /// In zh, this message translates to:
+  /// **'请完成升级并重启后台'**
+  String get aboutRestartBackend;
+
+  /// No description provided for @aboutBackendVersion.
+  ///
+  /// In zh, this message translates to:
+  /// **'后台仍为 {version}，重启后使用 FerryDesk 更新服务。'**
+  String aboutBackendVersion(String version);
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

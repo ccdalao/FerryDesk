@@ -69,6 +69,14 @@ pub fn authorize(user: &str, code: &str) -> Result<()> {
     .map_err(|e| os("登记安全输入设备授权", e))
 }
 
+/// 只读查询明确的机器级授权；可用于验证策略路径 ACL，不依赖服务或网络连接。
+pub fn is_authorized(user: &str, peer: &str) -> Result<bool> {
+    let peer: Fingerprint = peer
+        .parse()
+        .map_err(|e: ferry_trust::Error| failure(&e.to_string()))?;
+    Ok(Policy::load(user, *peer.as_bytes())?.is_some())
+}
+
 pub fn revoke(user: &str, peer: &str) -> Result<()> {
     let peer: Fingerprint = peer
         .parse()

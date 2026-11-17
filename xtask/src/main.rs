@@ -23,6 +23,7 @@ const USAGE: &str = "\
   icons   从 assets/icons/ 的 SVG 导出托盘图标和两个系统的应用图标（需要 rsvg-convert）
   input-validation [--target <Windows目标>]  构建安全输入 CLI 验收包，不安装或启动
   release <版本>   改版本号、整理更新日志，提交并打 tag（推送后 CI 构建发布草稿）
+          [--prepare] 仅准备版本和更新日志，不提交或打 tag
   manifest …       CI 用：按目录里的更新包写 update.json
   sign <文件>      CI 用：用发布私钥签名，写出 <文件>.minisig
   update-keygen    生成发布密钥，公钥写进 crates/ferry-update/src/keys.rs（只需一次）";

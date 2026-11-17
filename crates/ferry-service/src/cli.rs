@@ -23,6 +23,10 @@ pub enum Mode {
         user_sid: String,
         fingerprint: String,
     },
+    Status {
+        user_sid: String,
+        fingerprint: String,
+    },
     Help,
 }
 
@@ -47,16 +51,27 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Mode, String> {
                 .filter(|s| s.len() == 195)
                 .ok_or("authorize 需要控制端的公开授权码")?,
         },
-        Some("revoke") => Mode::Revoke {
-            user_sid: args
+        Some(command @ ("revoke" | "status")) => {
+            let user_sid = args
                 .next()
                 .filter(|s| s.len() <= 184)
-                .ok_or("revoke 需要用户 SID")?,
-            fingerprint: args
+                .ok_or("需要用户 SID")?;
+            let fingerprint = args
                 .next()
                 .filter(|s| s.len() == 64)
-                .ok_or("revoke 需要完整设备指纹")?,
-        },
+                .ok_or("需要完整设备指纹")?;
+            if command == "status" {
+                Mode::Status {
+                    user_sid,
+                    fingerprint,
+                }
+            } else {
+                Mode::Revoke {
+                    user_sid,
+                    fingerprint,
+                }
+            }
+        }
         Some("agent") => {
             let parent_pid = args
                 .next()

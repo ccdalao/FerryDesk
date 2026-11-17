@@ -6,6 +6,7 @@
 
 mod confirm;
 mod diagnostics;
+mod display_stream;
 mod record;
 mod runtime;
 mod ui;
@@ -24,6 +25,7 @@ use tracing::{info, warn};
 
 use crate::error::Result;
 use crate::events::Events;
+pub use ferry_types::DisplayAction;
 use runtime::Runtime;
 pub use update::{MANIFEST_URL, UpdateSource};
 
@@ -104,6 +106,10 @@ pub trait Host: Send + Sync + 'static {
     fn open_folder(&self, path: &Path) {
         let _ = path;
     }
+
+    fn display_backend(&self) -> Option<std::sync::Arc<dyn ferry_platform::DisplayBackend>> {
+        None
+    }
 }
 
 /// 托盘菜单等应用自身发来的命令。
@@ -111,6 +117,9 @@ pub trait Host: Send + Sync + 'static {
 pub enum Command {
     SetSharing(bool),
     OpenSettings,
+    Display(DisplayAction),
+    RunDisplayPlan(u32),
+    DisplayShortcutFailed,
     /// 安装已下载好的新版本。
     InstallUpdate,
     /// 停止引擎、删除 `ipc.json`，然后 [`run`] 返回。
@@ -129,6 +138,11 @@ pub struct Summary {
     pub lang: ferry_types::Lang,
     /// 下载好、可以安装的新版本。
     pub update: Option<String>,
+    pub display_available: bool,
+    pub display_active: Option<DisplayAction>,
+    pub display_paused: bool,
+    pub display_shortcuts: ferry_types::DisplayShortcuts,
+    pub display_plans: Vec<ferry_types::DisplayPlan>,
 }
 
 /// [`run`] 一侧：接收命令、发布简要状态。
@@ -185,6 +199,13 @@ pub async fn run<H: Host>(store: Store, host: H, mut control: Control) -> Result
     info!(port = endpoint.port, "设置界面可以连接了");
 
     let (events, mut engine_events) = Events::channel();
+    let (events, mut display_connections) = match host.display_backend() {
+        Some(_) => {
+            let (events, connections) = events.with_display_stream();
+            (events, Some(connections))
+        }
+        None => (events, None),
+    };
     let (asks, mut pair_asks) = mpsc::unbounded_channel();
     let (ui_tx, mut ui_events) = mpsc::unbounded_channel();
     let (update_tx, mut update_events) = mpsc::unbounded_channel();
@@ -206,6 +227,12 @@ pub async fn run<H: Host>(store: Store, host: H, mut control: Control) -> Result
                 }
             }
             Some(event) = engine_events.recv() => rt.on_engine(event),
+            Some(connection) = async {
+                match &mut display_connections {
+                    Some(connections) => connections.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => rt.on_display_connection(connection),
             Some(event) = update_events.recv() => {
                 rt.on_update(event);
                 if rt.quit_requested() {
@@ -218,7 +245,7 @@ pub async fn run<H: Host>(store: Store, host: H, mut control: Control) -> Result
                 Some(command) => rt.on_command(command).await,
             },
             exit = rt.engine_exit() => rt.on_engine_exit(exit),
-            _ = tick.tick() => rt.on_tick(),
+            _ = tick.tick() => rt.on_tick().await,
         }
         control.summary.send_if_modified(|current| {
             let next = rt.summary();

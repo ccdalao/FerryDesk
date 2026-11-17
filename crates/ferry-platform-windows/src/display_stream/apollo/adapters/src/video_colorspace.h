@@ -1,0 +1,6 @@
+// Colorspace configuration extracted from Apollo v0.4.6, GPL-3.0-only.
+#pragma once
+namespace video {
+  enum class colorspace_e { rec601, rec709, bt2020sdr, bt2020 };
+  struct sunshine_colorspace_t { colorspace_e colorspace; bool full_range; unsigned bit_depth; };
+}

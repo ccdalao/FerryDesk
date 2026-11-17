@@ -5,6 +5,7 @@ use ferry_types::{
 };
 
 use crate::clipboard::{ClipboardOffer, ClipboardRequest};
+use crate::display_stream::{DisplayControl, DisplayPacket};
 use crate::edge::DropHint;
 use crate::error::{DecodeError, EncodeError};
 use crate::file::{self, FileCancel, FileEnd, FileList, FileOffer, FileResume};
@@ -75,6 +76,8 @@ pub enum Message {
     AppInfo {
         version: String,
     },
+    /// 扩展屏会话控制。需要 `DISPLAY_STREAM` 能力。
+    DisplayControl(DisplayControl),
 
     // ── 数据连接 ──────────────────────────
     ClipboardOffer(ClipboardOffer),
@@ -103,6 +106,46 @@ pub enum Message {
     FileEnd(FileEnd),
     /// 全部收好、校验通过并已放到最终位置。
     FileDone,
+
+    /// 将媒体连接绑定到本次启动，需在第一条媒体消息前发送。
+    DisplayOpen {
+        id: u64,
+    },
+    /// 已认证的媒体 TCP 连接上交换 UDP 端口和临时会话令牌。
+    DisplayUdpOffer {
+        id: u64,
+        port: u16,
+        token: u64,
+    },
+    DisplayUdpReady {
+        id: u64,
+        port: u16,
+        token: u64,
+    },
+    DisplayRealtimeOffer {
+        id: u64,
+        port: u16,
+        key: [u8; 32],
+    },
+    DisplayRealtimeReady {
+        id: u64,
+        port: u16,
+    },
+    DisplayRealtimeCommit {
+        id: u64,
+        udp: bool,
+    },
+    DisplayRealtimeFeedback {
+        frames: u32,
+        lost: u32,
+        recovered: u32,
+        queue_ms: u16,
+        keyframe: bool,
+    },
+    DisplayRealtimeFallback,
+    DisplayPacket(DisplayPacket),
+    /// 接收窗口的普通桌面输入，只用于本次扩展屏。
+    DisplayInput(InputEvent),
 }
 
 /// 消息类型号。高字节是类别：0x00 握手、心跳与配对，0x01 输入，0x02 剪贴板，0x03 传输，0x04 文件。
@@ -127,6 +170,7 @@ mod ty {
     pub(super) const SECURE_CHALLENGE: u16 = 0x0107;
     pub(super) const SECURE_INPUT: u16 = 0x0108;
     pub(super) const INPUT_BLOCKED: u16 = 0x0109;
+    pub(super) const DISPLAY_CONTROL: u16 = 0x010a;
     pub(super) const KEY: u16 = 0x0110;
     pub(super) const POINTER_MOTION: u16 = 0x0120;
     pub(super) const POINTER_DELTA: u16 = 0x0121;
@@ -148,6 +192,16 @@ mod ty {
     pub(super) const FILE_DATA: u16 = 0x0413;
     pub(super) const FILE_END: u16 = 0x0414;
     pub(super) const FILE_DONE: u16 = 0x0415;
+    pub(super) const DISPLAY_OPEN: u16 = 0x0500;
+    pub(super) const DISPLAY_PACKET: u16 = 0x0501;
+    pub(super) const DISPLAY_INPUT: u16 = 0x0502;
+    pub(super) const DISPLAY_UDP_OFFER: u16 = 0x0503;
+    pub(super) const DISPLAY_UDP_READY: u16 = 0x0504;
+    pub(super) const DISPLAY_REALTIME_OFFER: u16 = 0x0505;
+    pub(super) const DISPLAY_REALTIME_READY: u16 = 0x0506;
+    pub(super) const DISPLAY_REALTIME_COMMIT: u16 = 0x0507;
+    pub(super) const DISPLAY_REALTIME_FEEDBACK: u16 = 0x0508;
+    pub(super) const DISPLAY_REALTIME_FALLBACK: u16 = 0x0509;
 }
 
 /// 类型号为 `ty` 的消息能否出现在 `channel` 上。未知类型返回 `None`。
@@ -165,6 +219,7 @@ pub(crate) fn allowed(ty: u16, channel: Channel) -> Option<bool> {
         | ty::SECURE_CHALLENGE
         | ty::SECURE_INPUT
         | ty::INPUT_BLOCKED
+        | ty::DISPLAY_CONTROL
         | ty::KEY
         | ty::POINTER_MOTION
         | ty::POINTER_DELTA
@@ -183,6 +238,16 @@ pub(crate) fn allowed(ty: u16, channel: Channel) -> Option<bool> {
         | ty::FILE_DATA
         | ty::FILE_END
         | ty::FILE_DONE => Channel::File,
+        ty::DISPLAY_OPEN
+        | ty::DISPLAY_PACKET
+        | ty::DISPLAY_INPUT
+        | ty::DISPLAY_UDP_OFFER
+        | ty::DISPLAY_UDP_READY
+        | ty::DISPLAY_REALTIME_OFFER
+        | ty::DISPLAY_REALTIME_READY
+        | ty::DISPLAY_REALTIME_COMMIT
+        | ty::DISPLAY_REALTIME_FEEDBACK
+        | ty::DISPLAY_REALTIME_FALLBACK => Channel::DisplayStream,
         _ => return None,
     };
     Some(home == channel)
@@ -217,6 +282,7 @@ impl Message {
             Self::OpenSettings => ty::OPEN_SETTINGS,
             Self::InputBlocked => ty::INPUT_BLOCKED,
             Self::AppInfo { .. } => ty::APP_INFO,
+            Self::DisplayControl(_) => ty::DISPLAY_CONTROL,
             Self::Input(event) => match event {
                 InputEvent::Key { .. } => ty::KEY,
                 InputEvent::PointerMotion { .. } => ty::POINTER_MOTION,
@@ -237,6 +303,16 @@ impl Message {
             Self::FileData { .. } => ty::FILE_DATA,
             Self::FileEnd(_) => ty::FILE_END,
             Self::FileDone => ty::FILE_DONE,
+            Self::DisplayOpen { .. } => ty::DISPLAY_OPEN,
+            Self::DisplayUdpOffer { .. } => ty::DISPLAY_UDP_OFFER,
+            Self::DisplayUdpReady { .. } => ty::DISPLAY_UDP_READY,
+            Self::DisplayRealtimeOffer { .. } => ty::DISPLAY_REALTIME_OFFER,
+            Self::DisplayRealtimeReady { .. } => ty::DISPLAY_REALTIME_READY,
+            Self::DisplayRealtimeCommit { .. } => ty::DISPLAY_REALTIME_COMMIT,
+            Self::DisplayRealtimeFeedback { .. } => ty::DISPLAY_REALTIME_FEEDBACK,
+            Self::DisplayRealtimeFallback => ty::DISPLAY_REALTIME_FALLBACK,
+            Self::DisplayPacket(_) => ty::DISPLAY_PACKET,
+            Self::DisplayInput(_) => ty::DISPLAY_INPUT,
         }
     }
 
@@ -273,6 +349,7 @@ impl Message {
             Self::PeerSide { side } => side.encode(w),
             Self::DropHint(m) => m.encode(w),
             Self::AppInfo { version } => w.str(version, MAX_VERSION_LEN, "版本号长度"),
+            Self::DisplayControl(m) => m.encode(w),
             Self::ClipboardOffer(m) => m.encode(w),
             Self::ClipboardRequest(m) => m.encode(w),
             Self::Chunk(m) => m.encode(w),
@@ -284,6 +361,53 @@ impl Message {
             Self::FileResume(m) => m.encode(w),
             Self::FileData { data } => file::encode_data(data, w),
             Self::FileEnd(m) => m.encode(w),
+            Self::DisplayOpen { id } => {
+                w.u64(*id);
+                Ok(())
+            }
+            Self::DisplayUdpOffer { id, port, token }
+            | Self::DisplayUdpReady { id, port, token } => {
+                w.u64(*id);
+                w.u16(*port);
+                w.u64(*token);
+                Ok(())
+            }
+            Self::DisplayPacket(m) => m.encode(w),
+            Self::DisplayRealtimeOffer { id, port, key } => {
+                w.u64(*id);
+                w.u16(*port);
+                w.array(key);
+                Ok(())
+            }
+            Self::DisplayRealtimeReady { id, port } => {
+                w.u64(*id);
+                w.u16(*port);
+                Ok(())
+            }
+            Self::DisplayRealtimeCommit { id, udp } => {
+                w.u64(*id);
+                w.bool(*udp);
+                Ok(())
+            }
+            Self::DisplayRealtimeFeedback {
+                frames,
+                lost,
+                recovered,
+                queue_ms,
+                keyframe,
+            } => {
+                w.u32(*frames);
+                w.u32(*lost);
+                w.u32(*recovered);
+                w.u16(*queue_ms);
+                w.bool(*keyframe);
+                Ok(())
+            }
+            Self::DisplayRealtimeFallback => Ok(()),
+            Self::DisplayInput(event) => {
+                w.array(&crate::SecureAction::Input(*event).encode()?);
+                Ok(())
+            }
             Self::FileDone | Self::OpenSettings | Self::InputBlocked => Ok(()),
         }
     }
@@ -352,6 +476,44 @@ impl Message {
             },
             ty::FILE_END => Self::FileEnd(FileEnd::decode(r)?),
             ty::FILE_DONE => Self::FileDone,
+            ty::DISPLAY_CONTROL => Self::DisplayControl(DisplayControl::decode(r)?),
+            ty::DISPLAY_OPEN => Self::DisplayOpen { id: r.u64()? },
+            ty::DISPLAY_UDP_OFFER => Self::DisplayUdpOffer {
+                id: r.u64()?,
+                port: r.u16()?,
+                token: r.u64()?,
+            },
+            ty::DISPLAY_UDP_READY => Self::DisplayUdpReady {
+                id: r.u64()?,
+                port: r.u16()?,
+                token: r.u64()?,
+            },
+            ty::DISPLAY_PACKET => Self::DisplayPacket(DisplayPacket::decode(r)?),
+            ty::DISPLAY_REALTIME_OFFER => Self::DisplayRealtimeOffer {
+                id: r.u64()?,
+                port: r.u16()?,
+                key: r.array()?,
+            },
+            ty::DISPLAY_REALTIME_READY => Self::DisplayRealtimeReady {
+                id: r.u64()?,
+                port: r.u16()?,
+            },
+            ty::DISPLAY_REALTIME_COMMIT => Self::DisplayRealtimeCommit {
+                id: r.u64()?,
+                udp: r.bool()?,
+            },
+            ty::DISPLAY_REALTIME_FEEDBACK => Self::DisplayRealtimeFeedback {
+                frames: r.u32()?,
+                lost: r.u32()?,
+                recovered: r.u32()?,
+                queue_ms: r.u16()?,
+                keyframe: r.bool()?,
+            },
+            ty::DISPLAY_REALTIME_FALLBACK => Self::DisplayRealtimeFallback,
+            ty::DISPLAY_INPUT => match crate::SecureAction::decode(&r.array()?)? {
+                crate::SecureAction::Input(event) => Self::DisplayInput(event),
+                _ => return Err(DecodeError::InvalidValue("扩展屏输入")),
+            },
             ty::OPEN_SETTINGS => Self::OpenSettings,
             ty::INPUT_BLOCKED => Self::InputBlocked,
             ty::APP_INFO => Self::AppInfo {

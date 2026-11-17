@@ -10,7 +10,67 @@ class AppLocalizationsZh extends AppLocalizations {
   AppLocalizationsZh([String locale = 'zh']) : super(locale);
 
   @override
-  String get appTitle => 'ScreenFerry';
+  String get displayPlans => '副屏方案';
+
+  @override
+  String get displayPlanAdd => '新建方案';
+
+  @override
+  String get displayPlanEdit => '编辑方案';
+
+  @override
+  String get displayPlanDelete => '删除方案';
+
+  @override
+  String get displayPlanApply => '应用方案';
+
+  @override
+  String get displayPlanName => '方案名称';
+
+  @override
+  String get displayPlanDesktop => '扩展哪台电脑的桌面';
+
+  @override
+  String get displayPlanSourceScreen => '桌面来源电脑的实体屏幕';
+
+  @override
+  String get displayPlanViewerScreen => '另一台电脑用于显示副屏的屏幕';
+
+  @override
+  String get displayPlanPrimary => 'Windows 主显示器';
+
+  @override
+  String get displayPlanSourcePrimary => '桌面来源的实体屏为主屏';
+
+  @override
+  String get displayPlanViewerPrimary => '另一台电脑显示的扩展屏为主屏';
+
+  @override
+  String get displayPlanPosition => '扩展屏相对于来源实体屏的位置';
+
+  @override
+  String get displayPlanAuto => '自动选择';
+
+  @override
+  String get displayPlanScreen => '屏幕';
+
+  @override
+  String get displayPlanMissing => '屏幕不可用，请重新选择';
+
+  @override
+  String get displayPlanUpgrade => '屏幕方案需要两台都升级并连接';
+
+  @override
+  String get displayPlanHint => '方案保存在本机，可从设置、托盘或快捷键应用。取消拓展会恢复原主屏和位置。';
+
+  @override
+  String get displayPlanPreviewMain => '主屏';
+
+  @override
+  String get displayPlanPreviewSecondary => '副屏';
+
+  @override
+  String get appTitle => 'FerryDesk';
 
   @override
   String get commonSave => '保存';
@@ -114,11 +174,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get bannerOpenSystemSettings => '打开系统设置';
 
   @override
-  String get problemPermission => '需要在系统设置的“隐私与安全性”中允许 ScreenFerry 控制键盘和鼠标';
+  String get problemPermission => '需要在系统设置的“隐私与安全性”中允许 FerryDesk 控制键盘和鼠标';
 
   @override
   String problemPortInUse(int port) {
-    return '端口 $port 被占用：可能还开着另一个键鼠共享软件或另一份 ScreenFerry';
+    return '端口 $port 被占用：可能还开着另一个键鼠共享软件或另一份 FerryDesk';
   }
 
   @override
@@ -128,19 +188,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get offlineNotRunning => '后台没有运行';
 
   @override
-  String get offlineStartHint => '请先启动 ScreenFerry，连上后会自动显示。';
+  String get offlineStartHint => '请先启动 FerryDesk，连上后会自动显示。';
 
   @override
   String get offlineAutoConnect => '启动后会自动连上。';
 
   @override
-  String get offlineStartFailed => '启动失败，请在“应用程序”中打开 ScreenFerry';
+  String get offlineStartFailed => '启动失败，请在“应用程序”中打开 FerryDesk';
 
   @override
   String get offlineStarting => '正在启动…';
 
   @override
-  String get offlineStart => '启动 ScreenFerry';
+  String get offlineStart => '启动 FerryDesk';
 
   @override
   String get offlineRetrying => '正在重试';
@@ -170,7 +230,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aboutBack => '返回设置';
 
   @override
-  String get aboutTagline => '在多台电脑之间共享一套键盘鼠标';
+  String get aboutTagline => '双向扩展屏与键鼠共享';
 
   @override
   String get aboutCheckUpdates => '检查更新';
@@ -179,7 +239,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aboutUpdatesSoon => '自动检查更新即将支持';
 
   @override
-  String get aboutAuthor => '作者主页';
+  String get aboutAuthor => '项目维护者';
 
   @override
   String get aboutLicense => '许可证';
@@ -282,7 +342,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get dialNotWaitingInviteBody => '确认那台电脑开着 ScreenFerry，并且选的是“被控制”。它的版本太旧时也不能被邀请，需要先升级。';
+  String get dialNotWaitingInviteBody => '确认那台电脑开着 FerryDesk，并且选的是“被控制”。它的版本太旧时也不能被邀请，需要先升级。';
 
   @override
   String dialNotWaitingTitle(String address) {
@@ -290,7 +350,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get dialNotWaitingBody => '确认那台电脑开着 ScreenFerry，并且在设置里选的是“控制别的电脑”。';
+  String get dialNotWaitingBody => '确认那台电脑开着 FerryDesk，并且在设置里选的是“控制别的电脑”。';
 
   @override
   String dialUnreachableTitle(String address) {
@@ -298,21 +358,21 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get dialUnreachableBody => '确认两台在同一个网络里、地址没有填错。Windows 第一次运行 ScreenFerry 时会询问防火墙，请允许它通过。';
+  String get dialUnreachableBody => '确认两台在同一个网络里、地址没有填错。Windows 第一次运行 FerryDesk 时会询问防火墙，请允许它通过。';
 
   @override
-  String dialNotScreenFerryTitle(String address) {
-    return '$address 上不是 ScreenFerry';
+  String dialNotFerryDeskTitle(String address) {
+    return '$address 上不是 FerryDesk';
   }
 
   @override
-  String get dialNotScreenFerryBody => '确认地址和端口没有填错。';
+  String get dialNotFerryDeskBody => '确认地址和端口没有填错。';
 
   @override
   String get dialIncompatibleTitle => '版本不兼容';
 
   @override
-  String get dialIncompatibleBody => '两台电脑上的 ScreenFerry 版本相差太多，请都升级到最新版。';
+  String get dialIncompatibleBody => '两台电脑上的 FerryDesk 版本相差太多，请都升级到最新版。';
 
   @override
   String dialBusyTitle(String address) {
@@ -351,7 +411,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get dialInviteHint => '那台电脑要开着 ScreenFerry，选的是“被控制”。地址在它的「设备」页上；不写端口时用 24811。';
+  String get dialInviteHint => '那台电脑要开着 FerryDesk，选的是“被控制”。地址在它的「设备」页上；不写端口时用 24811。';
 
   @override
   String get dialConnectHint => '可以是 IP、IP:端口或电脑名，不写端口时用 24810。地址在那台电脑的「设备」页上。';
@@ -420,7 +480,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get diagVerbose => '详细记录';
 
   @override
-  String get diagVerboseOff => '排查连接问题时打开，会多记一些细节。重启 ScreenFerry 后自动关闭';
+  String get diagVerboseOff => '排查连接问题时打开，会多记一些细节。重启 FerryDesk 后自动关闭';
 
   @override
   String get diagVerboseJustOn => '刚刚打开。问题出现后导出，再把它关掉';
@@ -753,7 +813,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsDataDir => '数据目录';
 
   @override
-  String get settingsAbout => '关于 ScreenFerry';
+  String get settingsAbout => '关于 FerryDesk';
 
   @override
   String settingsVersion(String version) {
@@ -842,7 +902,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get layoutMovable => '可以拖动';
 
   @override
-  String get layoutEmpty => '还没有配对的设备。在另一台电脑上运行 ScreenFerry 并配对后，它会出现在本机旁边';
+  String get layoutEmpty => '还没有配对的设备。在另一台电脑上运行 FerryDesk 并配对后，它会出现在本机旁边';
 
   @override
   String layoutDropAt(String where) {
@@ -898,7 +958,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get devicesNonePaired => '还没有配对的设备';
 
   @override
-  String get devicesNonePairedHint => '在另一台电脑上运行 ScreenFerry，两边核对配对码后会出现在这里。';
+  String get devicesNonePairedHint => '在另一台电脑上运行 FerryDesk，两边核对配对码后会出现在这里。';
 
   @override
   String get devicesFound => '在局域网里发现';
@@ -916,7 +976,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get devicesWaiting => '等另一台电脑来找本机';
 
   @override
-  String get devicesWaitingHint => '在另一台电脑上运行 ScreenFerry 并选择本机后，这里会弹出配对码请你核对。';
+  String get devicesWaitingHint => '在另一台电脑上运行 FerryDesk 并选择本机后，这里会弹出配对码请你核对。';
 
   @override
   String devicesWaitingHintAddress(String address) {
@@ -1308,6 +1368,33 @@ class AppLocalizationsZh extends AppLocalizations {
   String get deviceConnection => '连接';
 
   @override
+  String get displayExtension => '扩展屏';
+
+  @override
+  String get displayShortcuts => '扩展屏快捷键';
+
+  @override
+  String get displayExtendController => '用被控电脑屏幕扩展主控';
+
+  @override
+  String get displayExtendControlled => '用主控电脑屏幕扩展被控';
+
+  @override
+  String get displayStart => '开启';
+
+  @override
+  String get displayAudio => '播放扩展端的声音';
+
+  @override
+  String get displayStop => '取消副屏拓展';
+
+  @override
+  String get displayUnavailable => '请连接支持扩展屏的设备';
+
+  @override
+  String get displayStarting => '正在等待第一帧…';
+
+  @override
   String get deviceThisDevice => '这台设备';
 
   @override
@@ -1467,7 +1554,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get deviceRemoveButton => '移除';
 
   @override
-  String get phStarted => 'ScreenFerry 已启动';
+  String get phStarted => 'FerryDesk 已启动';
 
   @override
   String phStartedServer(String name) {
@@ -1718,7 +1805,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String toastPeerSettingsUnsupported(String name) {
-    return '$name 上的 ScreenFerry 版本较旧，请在那台电脑上打开设置';
+    return '$name 上的 FerryDesk 版本较旧，请在那台电脑上打开设置';
   }
 
   @override
@@ -1795,7 +1882,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String aboutVersionLine(String version) {
-    return '版本 $version · 在多台电脑之间共享一套键盘鼠标';
+    return '版本 $version · 双向扩展屏与键鼠共享';
   }
 
   @override
@@ -1859,7 +1946,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get updateInstallingHint => 'ScreenFerry 会自己重新打开，这个窗口随后重新连上';
+  String get updateInstallingHint => 'FerryDesk 会自己重新打开，这个窗口随后重新连上';
 
   @override
   String updateManual(String version) {
@@ -1935,7 +2022,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get updateBannerHint => '重启 ScreenFerry 完成更新，键鼠会断开约 5 秒';
+  String get updateBannerHint => '重启 FerryDesk 完成更新，键鼠会断开约 5 秒';
 
   @override
   String devicePeerCanUpdate(String version) {
@@ -1968,5 +2055,85 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String toastUpdateFailed(String message) {
     return '更新没有装上：$message';
+  }
+
+  @override
+  String get displayPause => '暂停扩展屏';
+
+  @override
+  String get displayResume => '恢复扩展屏';
+
+  @override
+  String get displayPauseShortcut => '暂停／恢复扩展屏';
+
+  @override
+  String get displayPauseHint => '暂停后两台各用各的桌面；恢复时沿用刚才的方向和方案';
+
+  @override
+  String get displayInputPriority => '鼠标响应优先';
+
+  @override
+  String get displayInputPriorityHint => '扩展期间由扩展窗口独占鼠标输入，可按 Ctrl+Alt+Esc 归还控制；持续拥塞时降低画质，链路稳定后恢复清晰度。';
+
+  @override
+  String get layoutDragExtensionHint => '扩展桌面允许按住鼠标跨屏移动窗口；普通共享仍保留拖拽保护';
+
+  @override
+  String get alignmentTitle => '屏幕对齐尺';
+
+  @override
+  String get alignmentAdjust => '校准';
+
+  @override
+  String get alignmentHint => '把本机接缝长度作为 100 格，按实际大小缩放另一块屏幕并拖动对齐。蓝色部分可以穿过，空白部分不会切屏。刻度为相对比例，不是实际厘米。';
+
+  @override
+  String get alignmentSize => '另一块屏幕的相对尺寸';
+
+  @override
+  String get alignmentOffset => '接缝偏移';
+
+  @override
+  String get alignmentReset => '恢复整边对应';
+
+  @override
+  String get alignmentApply => '保存对齐';
+
+  @override
+  String get alignmentPickHint => '在两台实际屏幕上点选对应边界，程序自动对齐，不用调整数值。';
+
+  @override
+  String get alignmentPickStart => '在两台屏幕显示尺子';
+
+  @override
+  String get alignmentPicking => '请在实屏尺上取点…';
+
+  @override
+  String get alignmentPickSteps => '左右排列时尺子显示在两块屏幕右侧。请在每台尺子上各点两处相同实际高度的位置；先选上界，再选下界。上下排列时使用底部尺子。';
+
+  @override
+  String get alignmentPickUpgrade => '两台电脑需连接并升级至支持实屏取点的版本。';
+
+  @override
+  String get alignmentDefault => '当前使用整条边缘对应。';
+
+  @override
+  String get alignmentPicked => '已取点，保存后按所选边界对齐。';
+
+  @override
+  String get aboutProject => '项目主页';
+
+  @override
+  String get aboutLicenseDetail => 'GPL-3.0-only · 保留上游 MIT / Apache-2.0 许可';
+
+  @override
+  String get aboutCredits => '开源致谢';
+
+  @override
+  String get aboutRestartBackend => '请完成升级并重启后台';
+
+  @override
+  String aboutBackendVersion(String version) {
+    return '后台仍为 $version，重启后使用 FerryDesk 更新服务。';
   }
 }

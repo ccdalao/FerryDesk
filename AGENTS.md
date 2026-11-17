@@ -49,8 +49,9 @@ screen-ferry/
 ├─ CLAUDE.md               # 只有一行 @AGENTS.md，供 Claude Code 读取
 ├─ README.md               # 英文；中文版是 README.zh-CN.md，两份同时改（ADR 0013）
 ├─ README.zh-CN.md
-├─ LICENSE-MIT             # 双许可证：MIT OR Apache-2.0
-├─ LICENSE-APACHE
+├─ LICENSE-GPL             # Apollo 核心整合版：GPL-3.0-only（ADR 0018）
+├─ LICENSE-MIT             # 保留原 ScreenFerry 代码的许可与版权
+├─ LICENSE-APACHE          # 保留原 ScreenFerry 代码的许可与版权
 ├─ CHANGELOG.md
 │
 ├─ crates/                 # 所有 Rust crate，一层平铺，不嵌套

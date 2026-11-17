@@ -203,6 +203,10 @@ class DemoBackend implements Backend {
     if (_link.value != DaemonLink.online) return false;
     sent.add(request);
     switch (request) {
+      case BeginAlignmentRequest(:final id):
+        emit(AlignmentResultNotice(id, null, "演示模式不显示实屏尺"));
+      case CancelAlignmentRequest(:final id):
+        emit(AlignmentResultNotice(id, null, null));
       case SetSharingRequest(:final on):
         _sharing = on;
         _cursor = null;
@@ -249,7 +253,7 @@ class DemoBackend implements Backend {
           ),
         );
       case CopyDiagnosticsRequest():
-        emit(const DiagnosticsSummaryNotice('ScreenFerry 诊断摘要\n\n版本  0.1.0\n'));
+        emit(const DiagnosticsSummaryNotice('FerryDesk 诊断摘要\n\n版本  0.3.0\n'));
       case SetVerboseRequest(:final on):
         _verboseSince = on ? DateTime.now() : null;
         _emitState();
@@ -348,7 +352,13 @@ class DemoBackend implements Backend {
         _setUpdate(UpdateStatus.installing);
       case DismissUpdateRequest(:final version):
         _setUpdate(_update.status, dismissed: version);
-      case HelloRequest() || OpenPermissionSettingsRequest() || OpenSettingsRequest():
+      case HelloRequest() ||
+          OpenPermissionSettingsRequest() ||
+          OpenSettingsRequest() ||
+          DisplayExtensionRequest() ||
+          SetDisplayPlansRequest() ||
+          RunDisplayPlanRequest() ||
+          SetDisplayPreferencesRequest():
         break;
     }
     _emitState();
@@ -571,7 +581,7 @@ class DemoBackend implements Backend {
       (
         LogKind.link,
         LogIcon.power,
-        'ScreenFerry 已启动',
+        'FerryDesk 已启动',
         '$_localName · 键鼠在本机',
         Phrase('started', {'name': _localName, 'role': role.name}),
         const Duration(minutes: 73),
@@ -651,7 +661,7 @@ class DemoBackend implements Backend {
   };
 
   static List<RunLogLine> _demoRunLog() => const [
-    RunLogLine(at: '06:12:03', level: RunLogLevel.info, text: 'ScreenFerry 0.1.0 已启动 · Mac Studio · 键鼠在本机'),
+    RunLogLine(at: '06:12:03', level: RunLogLevel.info, text: 'FerryDesk 0.3.0 已启动 · Mac Studio · 键鼠在本机'),
     RunLogLine(at: '06:12:03', level: RunLogLevel.info, text: '等待客户端连接 addr=0.0.0.0:24810'),
     RunLogLine(at: '06:12:04', level: RunLogLevel.info, text: '客户端已连接 peer=办公室 PC'),
     RunLogLine(at: '06:12:04', level: RunLogLevel.info, text: '已连接 办公室 PC TLS 1.3 · 192.168.2.18'),

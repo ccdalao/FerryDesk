@@ -54,6 +54,7 @@ pub struct EdgeSwitch {
     /// 显示器大小不一时外接矩形里有没有屏幕的空白：进出按真正贴着切换边缘的那几块对齐，光标也不走进空白。
     local_screens: Vec<Rect>,
     remote_screens: Vec<Rect>,
+    alignment: ferry_types::EdgeAlignment,
 }
 
 impl EdgeSwitch {
@@ -72,12 +73,26 @@ impl EdgeSwitch {
             carry: (0, 0),
             local_screens: Vec::new(),
             remote_screens: Vec::new(),
+            alignment: Default::default(),
         }
     }
 
     /// 本机各块显示器的范围。进出时沿边缘的位置按贴着切换边缘的那几块换算。
     pub fn set_local_screens(&mut self, screens: &[Rect]) {
         self.local_screens = screens.to_vec();
+    }
+
+    pub fn set_alignment(&mut self, alignment: ferry_types::EdgeAlignment) {
+        self.alignment = alignment.clamped();
+    }
+
+    fn calibrated_edges(&self) -> (Rect, Rect) {
+        crate::alignment::aligned_edges(
+            self.local_edge(),
+            self.remote_edge(),
+            matches!(self.side, Side::Left | Side::Right),
+            self.alignment,
+        )
     }
 
     /// 远端各块显示器的范围。光标在远端时不会走进没有屏幕的空白，已经在空白里的挪到最近的屏幕上。
@@ -162,7 +177,12 @@ impl EdgeSwitch {
             Side::Bottom => (position.y >= l.bottom() - 1, dy > 0),
             Side::Top => (position.y <= l.y, dy < 0),
         };
-        if !at_edge {
+        let (contact, _) = self.calibrated_edges();
+        let inside = match self.side {
+            Side::Left | Side::Right => position.y >= contact.y && position.y < contact.bottom(),
+            Side::Top | Side::Bottom => position.x >= contact.x && position.x < contact.right(),
+        };
+        if !at_edge || !inside {
             self.arrived = None;
             return None;
         }
@@ -184,7 +204,7 @@ impl EdgeSwitch {
             Side::Top => i64::from(l.y) - y,
         };
         let depth = (self.to_remote(beyond) - 1).max(INSET);
-        let (le, re) = (self.local_edge(), self.remote_edge());
+        let (le, re) = self.calibrated_edges();
         let at = match self.side {
             Side::Right => Point::new(offset(r.x, depth), along_y(position.y, le, re)),
             Side::Left => Point::new(offset(r.right() - 1, -depth), along_y(position.y, le, re)),
@@ -246,7 +266,14 @@ impl EdgeSwitch {
             Side::Bottom => next.y == r.y,
             Side::Top => next.y == r.bottom() - 1,
         };
-        let ready = if can_leave && at_edge {
+        let projected = self.local_point_unclamped(next, INSET);
+        let (_, remote_edge) = self.calibrated_edges();
+        let remote_overlaps = match self.side {
+            Side::Left | Side::Right => next.y >= remote_edge.y && next.y < remote_edge.bottom(),
+            Side::Top | Side::Bottom => next.x >= remote_edge.x && next.x < remote_edge.right(),
+        };
+        let overlaps = self.local.contains(projected) && remote_overlaps;
+        let ready = if can_leave && at_edge && overlaps {
             let arrived = *self.arrived.get_or_insert(now);
             now.saturating_duration_since(arrived) >= self.delay
         } else {
@@ -303,15 +330,18 @@ impl EdgeSwitch {
 
     /// 回到本机时光标的位置：沿边缘与远端位置 `at` 对齐，离边缘 `depth` 个单位。
     fn local_point(&self, at: Point, depth: i64) -> Point {
+        clamp_into(self.local_point_unclamped(at, depth), self.local)
+    }
+
+    fn local_point_unclamped(&self, at: Point, depth: i64) -> Point {
         let l = self.local;
-        let (le, re) = (self.local_edge(), self.remote_edge());
-        let p = match self.side {
+        let (le, re) = self.calibrated_edges();
+        match self.side {
             Side::Right => Point::new(offset(l.right() - 1, -depth), along_y(at.y, re, le)),
             Side::Left => Point::new(offset(l.x, depth), along_y(at.y, re, le)),
             Side::Bottom => Point::new(along_x(at.x, re, le), offset(l.bottom() - 1, -depth)),
             Side::Top => Point::new(along_x(at.x, re, le), offset(l.y, depth)),
-        };
-        clamp_into(p, l)
+        }
     }
 
     /// 本机这一段里，真正贴着切换边缘的那部分。

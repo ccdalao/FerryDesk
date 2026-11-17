@@ -1,0 +1,142 @@
+{
+  "apollo": {
+    "tag": "v0.4.6",
+    "license": "GPL-3.0-only",
+    "commit": "0cd32abaaa141d262477d039ac447b38fe99c394"
+  },
+  "nv_codec_headers": {
+    "commit": "22441b505d9d9afc1e3002290820909846c24bdc",
+    "license": "MIT"
+  },
+  "moonlight_common_c": {
+    "commit": "ad329b240f18826f320ce6a99226b36354b86b59",
+    "license": "GPL-3.0",
+    "files": [
+      "upstream/moonlight-common-c/reedsolomon/rs.c",
+      "upstream/moonlight-common-c/reedsolomon/rs.h",
+      "upstream/moonlight-common-c/LICENSE.txt"
+    ]
+  },
+  "normalization": "UTF-8 LF",
+  "files": [
+    {
+      "path": "upstream/LICENSE",
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    {
+      "path": "upstream/src/nvenc/nvenc_base.cpp",
+      "sha256": "fd1a5585ab761e72444c74febf1c6d33ff09fd65c10a8364d1e6027146dc8674",
+      "upstream_sha256": "e255b3b5f2494bb58af369a9ac4544b1db8bd7d781a8f58f2652829099e4de6a"
+    },
+    {
+      "path": "upstream/src/nvenc/nvenc_base.h",
+      "sha256": "45a49f8ad4a37bb1d70efec96c6c46d7191efeb54bf558af0b27620f3df621f2",
+      "upstream_sha256": "4c594e9067538971e32a5dcd5063a9aa353c9630afd2c905b90bacd0bd45fb38"
+    },
+    {
+      "path": "upstream/src/nvenc/nvenc_colorspace.h",
+      "sha256": "0108f0bdc2a31d9882aa46f994e52977ff3b69b690637e2b4e2e6b2718d9ecff"
+    },
+    {
+      "path": "upstream/src/nvenc/nvenc_config.h",
+      "sha256": "b0cd841cedb5db6e27b785bb17a389b1d9c2c9eff78fa830278dd4d5cbceb7a0"
+    },
+    {
+      "path": "upstream/src/nvenc/nvenc_d3d11_native.cpp",
+      "sha256": "02b08cae961dbec4a365493125d6206b28b8fe50bad0988aed14331b8863fafa"
+    },
+    {
+      "path": "upstream/src/nvenc/nvenc_d3d11_native.h",
+      "sha256": "f688320d4bedaf4c72d7c797aac895ed5a48075a7fb3218c6fc679a18893032b"
+    },
+    {
+      "path": "upstream/src/nvenc/nvenc_d3d11.cpp",
+      "sha256": "39320ba242543451871710b6a31dc4d6c529bb1f8222d40a85729b6ce985a5fb"
+    },
+    {
+      "path": "upstream/src/nvenc/nvenc_d3d11.h",
+      "sha256": "1da2561e4c04f881b4455bb26bd6f1ad870fa979e2db1a47ecdf693ac53b615c"
+    },
+    {
+      "path": "upstream/src/nvenc/nvenc_encoded_frame.h",
+      "sha256": "91e543fa177a236bfdc1f41d6080d07f91a6899b8a12fe155bdf2f1fd1819c0b"
+    },
+    {
+      "path": "upstream/src/nvenc/nvenc_utils.cpp",
+      "sha256": "93a152f8406cf2485b9e3b381325acd7e7810a256beb525333b0cf165463242b"
+    },
+    {
+      "path": "upstream/src/nvenc/nvenc_utils.h",
+      "sha256": "a5a5cb78090cb5b039257f2c8daa30a88a3c9ca121e140c4d6466522fd9540e2"
+    },
+    {
+      "path": "headers/LICENSE-MIT",
+      "sha256": "04b2307536706a130608b063817566affa567786d7428764c82535a29f7f905c"
+    },
+    {
+      "path": "headers/ffnvcodec/nvEncodeAPI.h",
+      "sha256": "808db2a21232839ee8a6057601f1964e90b20385f6dbf080f3cd33f6470c66c4"
+    },
+    {
+      "path": "upstream/src/stream.cpp",
+      "sha256": "e421b972110cb514656cee9194b02833e46386b39afe7172c3dee6388440d03a",
+      "upstream_sha256": "e421b972110cb514656cee9194b02833e46386b39afe7172c3dee6388440d03a"
+    },
+    {
+      "path": "upstream/moonlight-common-c/src/RtpVideoQueue.c",
+      "sha256": "4886dbbeee693c9dcee526a0a97936545d4a8ad427df12686c56dea9fd952f19",
+      "upstream_sha256": "a948818929d51519641d3172a59f8c509f32cf0b611e2ce3d45227f87daf624a"
+    },
+    {
+      "path": "upstream/moonlight-common-c/src/RtpVideoQueue.h",
+      "sha256": "8da79ad9a7efc0f79d02cdb0275ff443fdd451b5fc23a9acbb82bfba969adb5a",
+      "upstream_sha256": "8da79ad9a7efc0f79d02cdb0275ff443fdd451b5fc23a9acbb82bfba969adb5a"
+    },
+    {
+      "path": "upstream/moonlight-common-c/src/Video.h",
+      "sha256": "6a4cf1544cbac618e08b4517794c4863e0ee9805addb9878847815265089e367",
+      "upstream_sha256": "6a4cf1544cbac618e08b4517794c4863e0ee9805addb9878847815265089e367"
+    },
+    {
+      "path": "upstream/moonlight-common-c/src/Platform.h",
+      "sha256": "e66b5dd3f3f6a7d0426bae1838ed11a969f2dfdb85fa0d7a127ccb76f2105883",
+      "upstream_sha256": "e66b5dd3f3f6a7d0426bae1838ed11a969f2dfdb85fa0d7a127ccb76f2105883"
+    },
+    {
+      "path": "upstream/moonlight-common-c/src/PlatformThreads.h",
+      "sha256": "9d72f802350431ea85470e92445287a91ade84b9874b8c5e50fee6306a5529c0",
+      "upstream_sha256": "9d72f802350431ea85470e92445287a91ade84b9874b8c5e50fee6306a5529c0"
+    },
+    {
+      "path": "upstream/moonlight-common-c/src/LinkedBlockingQueue.h",
+      "sha256": "3e3d3f622080ba9835816079e983008b4d5cf175575ea503e044e3a80005a68f",
+      "upstream_sha256": "3e3d3f622080ba9835816079e983008b4d5cf175575ea503e044e3a80005a68f"
+    },
+    {
+      "path": "upstream/moonlight-common-c/src/Limelight.h",
+      "sha256": "64a03750314615e5b5fc521116e94a77c485acb28bfb4b331af7891cc495de12",
+      "upstream_sha256": "64a03750314615e5b5fc521116e94a77c485acb28bfb4b331af7891cc495de12"
+    },
+    {
+      "path": "upstream/moonlight-common-c/reedsolomon/rs.c",
+      "sha256": "81a369536f6c32ace654ef82cc427cb9042f507cfb5fd5a48bf2ca4c8b1c6529",
+      "upstream_sha256": "81a369536f6c32ace654ef82cc427cb9042f507cfb5fd5a48bf2ca4c8b1c6529"
+    },
+    {
+      "path": "upstream/moonlight-common-c/reedsolomon/rs.h",
+      "sha256": "d7a20d55a6153c5afd0954c03ba0893bd5eee7c04b941d0500574b6e344d5f00",
+      "upstream_sha256": "d61adef64a44cddd6b7680fa53fcd31729a89904ade0996a810a7626c039faa4"
+    },
+    {
+      "path": "upstream/moonlight-common-c/LICENSE.txt",
+      "sha256": "53927bd0b739d38c87a0a82236fd9b070c2dfff11c0c119be50372005d5047ad",
+      "upstream_sha256": "53927bd0b739d38c87a0a82236fd9b070c2dfff11c0c119be50372005d5047ad"
+    }
+  ],
+  "local_patches": [
+    "RtpVideoQueue.c: include ScreenFerry callback shim only in standalone build; GF tables initialized with call_once in owning adapter. Queue/FEC algorithms retained.",
+    "rs.h: extern C linkage guard for C++ adapter.",
+    "nvenc_base: retain initialization structs and expose bitrate-only NVENC reconfiguration.",
+    "transport.cpp: Apollo stream.cpp RTP/NV header, short frame header, multi-FEC block and packet pacing adaptation; Windows CNG AES-256-GCM and ScreenFerry lifecycle callbacks."
+  ]
+}

@@ -23,6 +23,13 @@ fn only_fixed_service_modes_are_accepted() {
         })
     );
     assert!(args(&["prepare", "C:\\Program Files\\ScreenFerry"]).is_ok());
+    assert_eq!(
+        args(&["status", "S-1-5-18", &"0".repeat(64)]),
+        Ok(Mode::Status {
+            user_sid: "S-1-5-18".to_owned(),
+            fingerprint: "0".repeat(64)
+        })
+    );
 }
 
 #[test]
@@ -43,6 +50,8 @@ fn rejects_paths_arbitrary_commands_and_invalid_control_handles() {
         &["authorize", "S-1-5-18"],
         &["authorize", "S-1-5-18", "short"],
         &["revoke", "S-1-5-18", "short"],
+        &["status", "S-1-5-18", "short"],
+        &["status", "S-1-5-18", &"0".repeat(64), "extra"],
     ] {
         assert!(args(input).is_err(), "{input:?}");
     }

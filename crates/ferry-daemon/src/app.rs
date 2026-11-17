@@ -29,7 +29,7 @@ pub(crate) fn init_output(parsed: &Result<Parsed, String>) {
     {
         let own = match parsed {
             Ok(Parsed::Run(Options {
-                mode: Mode::Resident { .. },
+                mode: Mode::Resident { .. } | Mode::Elevate,
                 ..
             })) => None,
             Ok(Parsed::Run(Options {
@@ -49,6 +49,15 @@ pub(crate) fn init_output(parsed: &Result<Parsed, String>) {
 }
 
 pub(crate) fn run(options: Options) -> ExitCode {
+    #[cfg(target_os = "windows")]
+    ferry_net::set_network_priority(std::sync::Arc::new(
+        ferry_platform_windows::WinNetworkPriority,
+    ));
+    match &options.mode {
+        Mode::InstallDisplayDriver { inf } => return report(display_driver(Some(inf))),
+        Mode::RemoveDisplayDriver => return report(display_driver(None)),
+        _ => {}
+    }
     let store = match &options.data_dir {
         Some(dir) => Store::open(dir),
         None => Store::open_default(),
@@ -61,6 +70,7 @@ pub(crate) fn run(options: Options) -> ExitCode {
         }
     };
     match options.mode {
+        Mode::Elevate => return report(elevate(store, options.data_dir.as_deref())),
         Mode::Resident { autostart } => return report(resident(store, autostart)),
         Mode::Peers => return report(list_peers(&store)),
         Mode::InputKey => return report(input_key(&store, &options.name)),
@@ -68,6 +78,7 @@ pub(crate) fn run(options: Options) -> ExitCode {
         Mode::Send { paths } => return report(send_files(&store, paths)),
         Mode::Quit => return report(quit(&store)),
         Mode::PreviewCapsule { dir } => return report(crate::preview::write(&dir)),
+        Mode::InstallDisplayDriver { .. } | Mode::RemoveDisplayDriver => unreachable!(),
         Mode::Serve { .. } | Mode::Connect { .. } => {}
     }
 
@@ -140,8 +151,11 @@ pub(crate) fn run(options: Options) -> ExitCode {
                     connect(config).await
                 }
                 Mode::Resident { .. }
+                | Mode::Elevate
                 | Mode::Peers
                 | Mode::InputKey
+                | Mode::InstallDisplayDriver { .. }
+                | Mode::RemoveDisplayDriver
                 | Mode::Forget { .. }
                 | Mode::Send { .. }
                 | Mode::Quit
@@ -168,6 +182,54 @@ pub(crate) fn run(options: Options) -> ExitCode {
     code
 }
 
+#[cfg(target_os = "windows")]
+fn display_driver(inf: Option<&std::path::Path>) -> Result<(), Box<dyn std::error::Error>> {
+    let result = match inf {
+        Some(inf) => ferry_platform_windows::install_display_driver(inf),
+        None => ferry_platform_windows::remove_display_driver(),
+    };
+    if let Some(dir) = inf.and_then(std::path::Path::parent) {
+        let diagnostic = match &result {
+            Ok(()) => "ScreenFerry display driver installation completed.\n".to_owned(),
+            Err(error) => format!("ScreenFerry display driver installation failed:\n{error}\n"),
+        };
+        // The administrator installer owns this directory. Retain the error even
+        // when the GUI executable has no terminal attached.
+        if let Err(error) = std::fs::write(dir.join("install-result.txt"), diagnostic) {
+            tracing::warn!("无法保存扩展屏驱动安装结果：{error}");
+        }
+    }
+    result.map_err(Into::into)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn display_driver(_inf: Option<&std::path::Path>) -> Result<(), Box<dyn std::error::Error>> {
+    Err("扩展屏驱动只适用于 Windows".into())
+}
+
+#[cfg(target_os = "windows")]
+fn elevate(
+    store: Store,
+    data_dir: Option<&std::path::Path>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if ferry_platform_windows::is_elevated() {
+        // 只有管理员子进程启动成功后才退出旧后台；用户取消 UAC 时，原后台继续工作。
+        quit(&store)?;
+        resident(store, false)
+    } else {
+        ferry_platform_windows::launch_elevated(&std::env::current_exe()?, data_dir)?;
+        Ok(())
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn elevate(
+    _store: Store,
+    _data_dir: Option<&std::path::Path>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    Err("elevate 仅适用于 Windows".into())
+}
+
 /// 常驻运行。已经有一份在运行时，请它打开设置界面，然后退出。
 ///
 /// 主线程运行系统事件循环和托盘图标；引擎与本机通信在另一个线程的 tokio 运行时里。
@@ -187,7 +249,9 @@ fn resident(store: Store, autostart: bool) -> Result<(), Box<dyn std::error::Err
     let mut event_loop = crate::host::NativeEventLoop::new()?;
     let dispatcher = event_loop.dispatcher();
     let (control, handle) = resident::control();
-    crate::tray::install(handle.clone())?;
+    crate::tray::install(handle.clone(), store.root())?;
+    #[cfg(target_os = "windows")]
+    crate::tray::display_hotkeys(event_loop.hotkeys(), handle.clone());
     event_loop.on_reopen(Box::new({
         let handle = handle.clone();
         move || handle.send(Command::OpenSettings)

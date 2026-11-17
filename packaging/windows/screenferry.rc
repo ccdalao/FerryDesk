@@ -32,12 +32,12 @@ BEGIN
         BLOCK "080404b0"
         BEGIN
             VALUE "CompanyName", "icloudza"
-            VALUE "FileDescription", "ScreenFerry"
+            VALUE "FileDescription", "FerryDesk"
             VALUE "FileVersion", VERSION_TEXT
             VALUE "InternalName", "screenferry"
-            VALUE "LegalCopyright", "MIT OR Apache-2.0"
+            VALUE "LegalCopyright", "GPL-3.0-only; includes MIT/Apache-2.0 components"
             VALUE "OriginalFilename", "screenferry.exe"
-            VALUE "ProductName", "ScreenFerry"
+            VALUE "ProductName", "FerryDesk"
             VALUE "ProductVersion", VERSION_TEXT
         END
     END

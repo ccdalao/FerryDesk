@@ -24,7 +24,7 @@ class ScreenFerryApp extends StatelessWidget {
         builder: (context, _) {
           final accent = AccentChoice.all[state.appearance.accent];
           return MaterialApp(
-            title: 'ScreenFerry',
+            title: 'FerryDesk',
             debugShowCheckedModeBanner: false,
             locale: state.locale,
             supportedLocales: AppLocalizations.supportedLocales,

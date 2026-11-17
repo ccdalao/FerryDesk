@@ -1,8 +1,8 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ferry_engine::{ClipLimit, Event};
 use ferry_platform_mock::MockClipboard;
-use ferry_types::{ClipboardContent, ClipboardFormat};
+use ferry_types::{ClipboardContent, ClipboardFormat, InputEvent, KeyAction, KeyCode};
 use tokio::time::sleep;
 
 use crate::support::{Rig, Setup, collect, eventually, fake_png, has};
@@ -12,6 +12,53 @@ const QUIET: Duration = Duration::from_millis(700);
 
 fn text(t: &str) -> ClipboardContent {
     ClipboardContent::text(t)
+}
+
+#[tokio::test]
+async fn slow_clipboard_read_does_not_block_input_or_heartbeats() {
+    let rig = Rig::start().await;
+    rig.mac_clipboard.copy(text("准备"));
+    rig.enter().await;
+    eventually("初次同步完成", || {
+        rig.pc_clipboard.content() == text("准备")
+    })
+    .await;
+    rig.leave().await;
+
+    let reads = rig.mac_clipboard.reads();
+    rig.mac_clipboard.delay_next_read(Duration::from_secs(2));
+    rig.mac_clipboard.copy(text("延迟渲染的内容"));
+    let started = Instant::now();
+    eventually("慢读取已经开始", || {
+        rig.mac_clipboard.reads() > reads
+    })
+    .await;
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "慢剪贴板堵住了单线程运行时"
+    );
+
+    let input_started = Instant::now();
+    rig.enter().await;
+    let letter = KeyCode::keyboard(0x04);
+    rig.key(letter, KeyAction::Down);
+    rig.key(letter, KeyAction::Up);
+    eventually("慢读取期间仍收到按键", || {
+        rig.inject.events().contains(&InputEvent::Key {
+            code: letter,
+            action: KeyAction::Up,
+        })
+    })
+    .await;
+    assert!(input_started.elapsed() < Duration::from_secs(1));
+
+    // 慢读取比心跳超时（1.5 秒）更久，但输入连接必须保持可用。
+    eventually("慢内容最终同步完成", || {
+        rig.pc_clipboard.content() == text("延迟渲染的内容")
+    })
+    .await;
+    assert!(!rig.server.is_finished());
+    assert!(!rig.client.is_finished());
 }
 
 #[tokio::test]

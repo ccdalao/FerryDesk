@@ -29,7 +29,7 @@
 //! 更新包和安装盘的名字里带架构：通用版是 `macos-universal`，否则是本机的 `macos-arm64` 或 `macos-x86_64`。
 //!
 //! Windows 先组装 `target/bundle/windows/ScreenFerry/` 目录，再用 Inno Setup 打成安装包
-//! `target/bundle/windows/ScreenFerry-<版本>-windows-x64-setup.exe`（`packaging/windows/screenferry.iss`，ADR 0011）：
+//! `target/bundle/windows/FerryDesk-<版本>-windows-x64-setup.exe`（`packaging/windows/screenferry.iss`，ADR 0011）：
 //!
 //! ```text
 //! ScreenFerry\
@@ -106,7 +106,16 @@ fn windows(root: &Path, _options: &Options) -> Result {
 
     step("编译设置界面（flutter build windows --release）");
     let app_dir = root.join("app");
-    flutter(&app_dir, &["build", "windows", "--release"])?;
+    let label_define = std::env::var("FERRYDESK_BUILD_LABEL")
+        .ok()
+        .filter(|label| !label.trim().is_empty())
+        .map(|label| format!("--dart-define=FERRYDESK_BUILD_LABEL={label}"));
+    let version_define = format!("--dart-define=FERRYDESK_BUILD_VERSION={version}");
+    let mut flutter_args = vec!["build", "windows", "--release", &version_define];
+    if let Some(define) = &label_define {
+        flutter_args.push(define);
+    }
+    flutter(&app_dir, &flutter_args)?;
     let built = app_dir.join("build/windows/x64/runner/Release");
 
     step("组装 ScreenFerry 目录");
@@ -127,10 +136,12 @@ fn windows(root: &Path, _options: &Options) -> Result {
     for dll in VC_RUNTIME {
         copy(&runtime.join(dll), &out.join("settings").join(dll))?;
     }
+    stage_display_driver(root, &out)?;
+    stage_source_and_licenses(root, &out)?;
 
     step("打安装包（Inno Setup）");
     let installers = root.join("target/bundle/windows");
-    let setup = installers.join(format!("ScreenFerry-{version}-windows-x64-setup.exe"));
+    let setup = installers.join(format!("FerryDesk-{version}-windows-x64-setup.exe"));
     if setup.exists() {
         fs::remove_file(&setup).map_err(|e| io(&setup, e))?;
     }
@@ -148,13 +159,193 @@ fn windows(root: &Path, _options: &Options) -> Result {
 
     println!("\n✓ {}", setup.display());
     println!(
-        "  双击安装：装进 Program Files，开始菜单里有 ScreenFerry，可以在“设置 → 应用”里卸载。"
+        "  双击安装：装进 Program Files\\FerryDesk，开始菜单里有 FerryDesk，可以在“设置 → 应用”里卸载。"
     );
     println!(
         "  不安装直接试：双击 {}",
         out.join("screenferry.exe").display()
     );
     Ok(())
+}
+
+/// GPL 整合版将对应源码直接随安装包交付，不依赖另一个下载链接。
+fn stage_source_and_licenses(root: &Path, out: &Path) -> Result {
+    use std::path::Component;
+    fs::create_dir_all(out).map_err(|e| io(out, e))?;
+    for name in ["LICENSE-GPL", "LICENSE-MIT", "LICENSE-APACHE"] {
+        copy(&root.join(name), &out.join(name))?;
+    }
+    copy(
+        &root.join("docs/third-party-media.md"),
+        &out.join("THIRD-PARTY-MEDIA.md"),
+    )?;
+    let native = root.join("crates/ferry-platform-windows/src/display_stream/apollo");
+    let notices = out.join("licenses/apollo");
+    fs::create_dir_all(&notices).map_err(|e| io(&notices, e))?;
+    copy(
+        &native.join("upstream/LICENSE"),
+        &notices.join("LICENSE-GPL"),
+    )?;
+    copy(
+        &native.join("headers/LICENSE-MIT"),
+        &notices.join("NV-CODEC-HEADERS-LICENSE-MIT"),
+    )?;
+    copy(
+        &native.join("upstream.json"),
+        &notices.join("upstream.json"),
+    )?;
+    copy(
+        &native.join("upstream/moonlight-common-c/LICENSE.txt"),
+        &notices.join("MOONLIGHT-COMMON-C-LICENSE-GPL"),
+    )?;
+    let files = Command::new("git")
+        .args([
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "-z",
+        ])
+        .current_dir(root)
+        .output()
+        .map_err(|e| format!("无法列出对应源码：{e}"))?;
+    if !files.status.success() {
+        return Err("无法列出对应源码".into());
+    }
+    let mut selected = Vec::new();
+    for bytes in files
+        .stdout
+        .split(|&byte| byte == 0)
+        .filter(|name| !name.is_empty())
+    {
+        let name = std::str::from_utf8(bytes).map_err(|_| "源码路径不是 UTF-8")?;
+        let path = Path::new(name);
+        if path
+            .components()
+            .any(|part| !matches!(part, Component::Normal(_)))
+        {
+            return Err(format!("源码路径不在仓库内：{name}"));
+        }
+        if !root.join(path).is_file() {
+            continue;
+        }
+        selected.extend_from_slice(bytes);
+        selected.push(0);
+    }
+    let list = out.join("source-files.list");
+    write(&list, &selected)?;
+    let status = Command::new("tar")
+        .args(["-a", "-cf"])
+        .arg(out.join("source.zip"))
+        .arg("--null")
+        .arg("-T")
+        .arg(&list)
+        .current_dir(root)
+        .status()
+        .map_err(|e| format!("无法打包对应源码：{e}"))?;
+    let _ = fs::remove_file(&list);
+    if !status.success() {
+        return Err("对应源码打包失败".into());
+    }
+    Ok(())
+}
+
+/// 固定版本的签名驱动由原项目发布，包内容由 SHA-256 校验。
+fn stage_display_driver(root: &Path, out: &Path) -> Result {
+    use ring::digest::{SHA256, digest};
+
+    const RELEASE: &str = "https://github.com/VirtualDrivers/Virtual-Display-Driver/releases/download/25.7.23/VirtualDisplayDriver-x86.Driver.Only.zip";
+    const EXPECTED: &str = "e24210692b442b39af763536330ce78b423f19342b7a7792c26de3944e418b3a";
+    const LICENSE: &str =
+        "https://raw.githubusercontent.com/VirtualDrivers/Virtual-Display-Driver/25.7.23/LICENSE";
+    let cache = root.join("target/bundle/windows/VirtualDisplayDriver-25.7.23.zip");
+    let stage = out.join("display-driver");
+    fs::create_dir_all(&stage).map_err(|e| io(&stage, e))?;
+    let matches = |path: &Path, expected: &str| {
+        fs::read(path).ok().is_some_and(|bytes| {
+            let hex: String = digest(&SHA256, &bytes)
+                .as_ref()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
+            hex == expected
+        })
+    };
+    if !matches(&cache, EXPECTED) {
+        download(RELEASE, &cache)?;
+    }
+    if !matches(&cache, EXPECTED) {
+        return Err("虚拟显示驱动文件的 SHA-256 校验失败".into());
+    }
+    let status = Command::new("tar.exe")
+        .arg("-xf")
+        .arg(&cache)
+        .arg("-C")
+        .arg(&stage)
+        .status()
+        .map_err(|e| format!("无法解压虚拟显示驱动：{e}"))?;
+    if !status.success() {
+        return Err("无法解压虚拟显示驱动".into());
+    }
+    let inf_dir = locate_driver(&stage).ok_or("虚拟显示驱动包里找不到 MttVDD.inf")?;
+    if inf_dir != stage {
+        for name in ["MttVDD.inf", "MttVDD.dll", "mttvdd.cat", "vdd_settings.xml"] {
+            copy(&inf_dir.join(name), &stage.join(name))?;
+        }
+        fs::remove_dir_all(&inf_dir).map_err(|e| io(&inf_dir, e))?;
+    }
+    let license = stage.join("LICENSE-MIT");
+    let license_cache = root.join("target/bundle/windows/VirtualDisplayDriver-25.7.23-LICENSE");
+    const LICENSE_SHA256: &str = "c2285c867ddc9b88f43b4f8fa2c77a9eec66207166c1217b37353a2ccd62ac03";
+    if !matches(&license_cache, LICENSE_SHA256) {
+        download(LICENSE, &license_cache)?;
+    }
+    if !matches(&license_cache, LICENSE_SHA256) {
+        return Err("虚拟显示驱动许可证的 SHA-256 校验失败".into());
+    }
+    copy(&license_cache, &license)?;
+    let config = stage.join("vdd_settings.xml");
+    let text = fs::read_to_string(&config).map_err(|e| io(&config, e))?;
+    let text = text.replace(
+        "<g_refresh_rate>90</g_refresh_rate>",
+        "<g_refresh_rate>90</g_refresh_rate>\n\t\t<g_refresh_rate>100</g_refresh_rate>",
+    );
+    write(&config, text.as_bytes())
+}
+
+fn locate_driver(path: &Path) -> Option<PathBuf> {
+    if path.join("MttVDD.inf").is_file() {
+        return Some(path.to_owned());
+    }
+    fs::read_dir(path)
+        .ok()?
+        .flatten()
+        .filter(|entry| entry.path().is_dir())
+        .find_map(|entry| locate_driver(&entry.path()))
+}
+
+fn download(url: &str, path: &Path) -> Result {
+    let status = Command::new("curl.exe")
+        .args([
+            "--fail",
+            "--location",
+            "--retry",
+            "3",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "120",
+        ])
+        .arg(url)
+        .arg("--output")
+        .arg(path)
+        .status()
+        .map_err(|e| format!("无法运行 curl.exe：{e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("下载失败：{url}"))
+    }
 }
 
 /// 找 Inno Setup 的命令行编译器：环境变量 `ISCC`，或者默认的安装位置。
@@ -323,6 +514,7 @@ fn macos(root: &Path, options: &Options) -> Result {
         ],
     )?;
 
+    stage_source_and_licenses(&root, &contents.join("Resources/source"))?;
     let identity = signing_identity();
     step(&format!(
         "签名（{}）",

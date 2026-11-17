@@ -1,5 +1,38 @@
 use std::fs;
 
+#[test]
+fn version_eight_migration_retains_shortcuts_and_adds_separate_calibration_defaults() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    fs::write(
+        dir.path().join("config.toml"),
+        "schema_version = 8\n[display_shortcuts]\nextend_controller = 49\nstop = 48\n",
+    )
+    .unwrap();
+    let mut config = store.config().unwrap();
+    assert_eq!(config.schema_version, 10);
+    assert_eq!(config.display_shortcuts.extend_controller, Some(b'1'));
+    assert_eq!(config.display_shortcuts.toggle_pause, None);
+    let mut device = ferry_types::DeviceSettings::new("ab".repeat(32));
+    device.alignment = ferry_types::EdgeAlignment {
+        offset: 200,
+        span: 600,
+        contact: None,
+    };
+    config.set_device(device.clone());
+    config.display_shortcuts.toggle_pause = Some(b'9');
+    store.save_config(&config).unwrap();
+    assert_eq!(store.config().unwrap(), config);
+    assert_eq!(
+        store
+            .config()
+            .unwrap()
+            .device(&device.fingerprint)
+            .alignment,
+        device.alignment
+    );
+}
+
 use ferry_store::{Error, Store};
 use ferry_trust::{Fingerprint, Peer, PeerList};
 
@@ -7,6 +40,25 @@ use crate::support::TempDir;
 
 fn peer(name: &str, seed: u8) -> Peer {
     Peer::new(name, Fingerprint::from_bytes([seed; 32]))
+}
+
+#[test]
+fn schema_seven_keeps_shortcuts_and_layout_when_adding_display_plans() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    fs::write(dir.path().join("config.toml"), "schema_version = 7\nside = \"left\"\ndisplay_audio = true\n[display_shortcuts]\nstop = 48\n").unwrap();
+    let config = store.config().unwrap();
+    assert_eq!(config.schema_version, ferry_types::Config::SCHEMA_VERSION);
+    assert_eq!(config.side, ferry_types::Side::Left);
+    assert!(config.display_audio);
+    assert_eq!(config.display_shortcuts.stop, Some(b'0'));
+    assert!(config.display_plans.is_empty());
+    store.save_config(&config).unwrap();
+    assert!(
+        fs::read_to_string(dir.path().join("config.toml"))
+            .unwrap()
+            .starts_with("schema_version = 10\n")
+    );
 }
 
 #[test]
@@ -109,7 +161,7 @@ fn config_defaults_until_saved_then_round_trips() {
     store.save_config(&config).unwrap();
     let text = fs::read_to_string(dir.path().join("config.toml")).unwrap();
     assert!(
-        text.starts_with("schema_version = 6\n"),
+        text.starts_with("schema_version = 10\n"),
         "第一行必须是 schema_version：{text}"
     );
     assert_eq!(store.config().unwrap(), config);
@@ -133,10 +185,15 @@ fn config_tolerates_missing_and_unknown_fields() {
 fn config_from_a_newer_version_is_refused() {
     let dir = TempDir::new();
     let store = Store::open(dir.path()).unwrap();
-    fs::write(dir.path().join("config.toml"), "schema_version = 7\n").unwrap();
+    let future = ferry_types::Config::SCHEMA_VERSION + 1;
+    fs::write(
+        dir.path().join("config.toml"),
+        format!("schema_version = {future}\n"),
+    )
+    .unwrap();
     assert!(matches!(
         store.config(),
-        Err(Error::TooNew { found: 7, .. })
+        Err(Error::TooNew { found, .. }) if found == future
     ));
 }
 
@@ -177,7 +234,7 @@ fn a_version_1_config_reads_as_version_2_with_an_empty_layout() {
     };
     store.save_config(&config).unwrap();
     let text = fs::read_to_string(dir.path().join("config.toml")).unwrap();
-    assert!(text.starts_with("schema_version = 6\n"), "{text}");
+    assert!(text.starts_with("schema_version = 10\n"), "{text}");
     assert!(text.contains("[[layout]]"), "{text}");
     assert_eq!(store.config().unwrap(), config);
 }
@@ -280,7 +337,7 @@ fn a_version_3_config_with_the_swap_off_makes_every_paired_device_plain() {
     // 写回之后是版本 4，旧字段不再出现，读回来一样。
     store.save_config(&config).unwrap();
     let text = fs::read_to_string(dir.path().join("config.toml")).unwrap();
-    assert!(text.starts_with("schema_version = 6\n"), "{text}");
+    assert!(text.starts_with("schema_version = 10\n"), "{text}");
     assert!(!text.contains("swap_cmd_ctrl"), "{text}");
     assert!(text.contains("[[devices]]"), "{text}");
     assert_eq!(store.config().unwrap(), config);

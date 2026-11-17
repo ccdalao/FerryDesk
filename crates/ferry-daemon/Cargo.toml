@@ -12,6 +12,7 @@ path = "src/main.rs"
 test = false
 
 [dependencies]
+ferry-net.workspace = true
 ferry-core.workspace = true
 ferry-engine.workspace = true
 ferry-platform.workspace = true

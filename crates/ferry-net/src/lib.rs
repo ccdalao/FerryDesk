@@ -17,6 +17,7 @@ mod framed;
 mod handshake;
 mod https;
 mod tls;
+mod udp;
 
 pub use addresses::local_addresses;
 pub use error::{Error, Result};
@@ -24,3 +25,7 @@ pub use framed::Framed;
 pub use handshake::{accept, initiate};
 pub use https::{Downloaded, Https};
 pub use tls::{ClientStream, ServerStream, Tls};
+pub use udp::{UdpMediaConfig, UdpMediaSocket};
+
+mod priority;
+pub use priority::set_network_priority;

@@ -64,6 +64,8 @@ enum ModifierKey { gui, ctrl, alt, capsLock }
 
 enum ScrollSpeed { slow, normal, fast }
 
+enum DisplayAction { extendController, extendControlled, stop, togglePause }
+
 /// 按地址连接、邀请为什么没成。
 enum DialError { badAddress, refused, unreachable, notScreenFerry, incompatible, busy, wrongRole }
 
@@ -82,6 +84,7 @@ class DaemonState {
     required this.settings,
     required this.activity,
     this.update = const UpdateInfo(),
+    this.displayExtension,
   });
 
   factory DaemonState.fromJson(Json j) => DaemonState(
@@ -95,6 +98,9 @@ class DaemonState {
     settings: DaemonSettings.fromJson(j['settings'] as Json? ?? const {}),
     activity: [for (final a in _list(j['activity'])) HourActivity.fromJson(a)],
     update: j['update'] is Json ? UpdateInfo.fromJson(j['update'] as Json) : const UpdateInfo(),
+    displayExtension: j['display_extension'] is Json
+        ? DisplayExtensionInfo.fromJson(j['display_extension'] as Json)
+        : null,
   );
 
   final Local local;
@@ -111,6 +117,172 @@ class DaemonState {
 
   /// 版本更新。旧版后台没有，为缺省值。
   final UpdateInfo update;
+  final DisplayExtensionInfo? displayExtension;
+}
+
+class DisplayExtensionInfo {
+  const DisplayExtensionInfo(
+    this.availablePeers,
+    this.activePeer,
+    this.active,
+    this.running,
+    this.audio,
+    this.shortcuts, {
+    this.plans = const [],
+    this.localScreens = const [],
+    this.peerScreens = const {},
+    this.configurablePeers = const [],
+    this.activePlan,
+    this.paused = false,
+    this.rulerPeers = const [],
+  });
+
+  factory DisplayExtensionInfo.fromJson(Json json) => DisplayExtensionInfo(
+    (json['available_peers'] as List?)?.whereType<String>().toList() ?? const [],
+    json['active_peer'] as String?,
+    _enumOrNull(DisplayAction.values, _camel(json['active'])),
+    _bool(json['running']),
+    _bool(json['audio']),
+    {
+      for (final action in DisplayAction.values)
+        if ((json['shortcuts'] as Json? ?? const {})[_snake(action)] case final int key) action: key,
+    },
+    plans: _list(json['plans']).map(DisplayPlan.fromJson).toList(),
+    localScreens: _list(json['local_screens']).map(DisplayScreen.fromJson).toList(),
+    peerScreens: {
+      for (final entry in (json['peer_screens'] as Json? ?? const {}).entries)
+        entry.key: _list(entry.value).map(DisplayScreen.fromJson).toList(),
+    },
+    configurablePeers: (json['configurable_peers'] as List?)?.whereType<String>().toList() ?? const [],
+    activePlan: json['active_plan'] as int?,
+    paused: _bool(json['paused']),
+    rulerPeers: (json['ruler_peers'] as List?)?.whereType<String>().toList() ?? const [],
+  );
+
+  final List<String> availablePeers;
+  final String? activePeer;
+  final DisplayAction? active;
+  final bool running;
+  final bool audio;
+  final Map<DisplayAction, int> shortcuts;
+  final List<DisplayPlan> plans;
+  final List<DisplayScreen> localScreens;
+  final Map<String, List<DisplayScreen>> peerScreens;
+  final List<String> configurablePeers;
+  final int? activePlan;
+  final bool paused;
+  final List<String> rulerPeers;
+}
+
+enum DisplayPrimary { source, viewer }
+
+class DisplayScreen {
+  const DisplayScreen(this.id, this.width, this.height, this.primary);
+  factory DisplayScreen.fromJson(Json j) => DisplayScreen(
+    _int(j['id']),
+    _int((j['bounds'] as Json?)?['width']),
+    _int((j['bounds'] as Json?)?['height']),
+    _bool(j['primary']),
+  );
+  final int id;
+  final int width;
+  final int height;
+  final bool primary;
+}
+
+class EdgeAlignment {
+  const EdgeAlignment({this.offset = 0, this.span = 1000, this.contact});
+  factory EdgeAlignment.fromJson(Json j) {
+    final contact = j['contact'];
+    final local = contact is Json ? contact['local'] : null;
+    final remote = contact is Json ? contact['remote'] : null;
+    (int, int)? pair(Object? list) => switch (list) {
+      [final int start, final int end] => (start, end),
+      _ => null,
+    };
+    final lhs = pair(local), rhs = pair(remote);
+    return EdgeAlignment(
+      offset: j['offset'] as int? ?? 0,
+      span: j['span'] as int? ?? 1000,
+      contact: lhs != null && rhs != null ? (lhs, rhs) : null,
+    );
+  }
+  final int offset;
+  final int span;
+  final ((int, int), (int, int))? contact;
+  bool get isDefault => offset == 0 && span == 1000 && contact == null;
+  Json toJson() => {
+    'offset': offset,
+    'span': span,
+    if (contact case ((final a, final b), (final c, final d)))
+      'contact': {
+        'local': [a, b],
+        'remote': [c, d],
+      },
+  };
+  @override
+  bool operator ==(Object other) =>
+      other is EdgeAlignment && offset == other.offset && span == other.span && contact == other.contact;
+  @override
+  int get hashCode => Object.hash(offset, span, contact);
+}
+
+class DisplayPlan {
+  const DisplayPlan({
+    required this.id,
+    required this.name,
+    required this.peer,
+    required this.localSource,
+    this.sourceScreen,
+    this.viewerScreen,
+    this.side = ScreenSide.right,
+    this.primary = DisplayPrimary.source,
+    this.audio = false,
+    this.shortcut,
+    this.alignment = const EdgeAlignment(),
+  });
+  factory DisplayPlan.fromJson(Json j) {
+    final options = j['options'] as Json? ?? const {};
+    return DisplayPlan(
+      id: _int(j['id']),
+      name: _str(j['name']),
+      peer: _str(j['peer']),
+      localSource: _bool(j['local_source']),
+      sourceScreen: options['source_screen'] as int?,
+      viewerScreen: options['viewer_screen'] as int?,
+      side: _enum(ScreenSide.values, options['side'], ScreenSide.right),
+      primary: _enum(DisplayPrimary.values, options['primary'], DisplayPrimary.source),
+      audio: _bool(j['audio']),
+      shortcut: j['shortcut'] as int?,
+      alignment: EdgeAlignment.fromJson(options['alignment'] as Json? ?? const {}),
+    );
+  }
+  final int id;
+  final String name;
+  final String peer;
+  final bool localSource;
+  final int? sourceScreen;
+  final int? viewerScreen;
+  final ScreenSide side;
+  final DisplayPrimary primary;
+  final bool audio;
+  final int? shortcut;
+  final EdgeAlignment alignment;
+  Json toJson() => {
+    'id': id,
+    'name': name,
+    'peer': peer,
+    'local_source': localSource,
+    'options': {
+      'source_screen': sourceScreen,
+      'viewer_screen': viewerScreen,
+      'side': side.name,
+      'primary': primary.name,
+      if (!alignment.isDefault) 'alignment': alignment.toJson(),
+    },
+    'audio': audio,
+    'shortcut': shortcut,
+  };
 }
 
 /// 版本更新的进度（ADR 0014）。
@@ -739,6 +911,7 @@ class DeviceSettings {
     this.modifiers = ModifierPreset.habit,
     this.textShortcuts = false,
     this.edgeDelayMs = 0,
+    this.alignment = const EdgeAlignment(),
     this.clipboard = true,
     this.files = true,
     this.customModifiers = ModifierMap.plain,
@@ -755,6 +928,7 @@ class DeviceSettings {
     modifiers: _enum(ModifierPreset.values, j['modifiers'], ModifierPreset.habit),
     textShortcuts: _bool(j['text_shortcuts']),
     edgeDelayMs: _int(j['edge_delay_ms']),
+    alignment: EdgeAlignment.fromJson(j['alignment'] as Json? ?? const {}),
     clipboard: j['clipboard'] is bool ? j['clipboard'] as bool : true,
     files: j['files'] is bool ? j['files'] as bool : true,
     customModifiers: j['custom_modifiers'] is Json
@@ -784,6 +958,7 @@ class DeviceSettings {
 
   /// 光标要在边上停这么久（毫秒）才切过去。
   final int edgeDelayMs;
+  final EdgeAlignment alignment;
   final bool clipboard;
   final bool files;
 
@@ -815,6 +990,7 @@ class DeviceSettings {
     ModifierPreset? modifiers,
     bool? textShortcuts,
     int? edgeDelayMs,
+    EdgeAlignment? alignment,
     bool? clipboard,
     bool? files,
     ModifierMap? customModifiers,
@@ -829,6 +1005,7 @@ class DeviceSettings {
     modifiers: modifiers ?? this.modifiers,
     textShortcuts: textShortcuts ?? this.textShortcuts,
     edgeDelayMs: edgeDelayMs ?? this.edgeDelayMs,
+    alignment: alignment ?? this.alignment,
     clipboard: clipboard ?? this.clipboard,
     files: files ?? this.files,
     customModifiers: customModifiers ?? this.customModifiers,
@@ -845,6 +1022,7 @@ class DeviceSettings {
     'modifiers': modifiers.name,
     'text_shortcuts': textShortcuts,
     'edge_delay_ms': edgeDelayMs,
+    if (!alignment.isDefault) 'alignment': alignment.toJson(),
     'clipboard': clipboard,
     'files': files,
     'custom_modifiers': customModifiers.toJson(),
@@ -863,6 +1041,7 @@ class DeviceSettings {
       other.modifiers == modifiers &&
       other.textShortcuts == textShortcuts &&
       other.edgeDelayMs == edgeDelayMs &&
+      other.alignment == alignment &&
       other.clipboard == clipboard &&
       other.files == files &&
       other.customModifiers == customModifiers &&
@@ -879,6 +1058,7 @@ class DeviceSettings {
     modifiers,
     textShortcuts,
     edgeDelayMs,
+    alignment,
     clipboard,
     files,
     customModifiers,
@@ -973,6 +1153,11 @@ sealed class Notice {
 
   /// 不认识的 `type` 返回 null。
   static Notice? fromJson(Json j) => switch (j['type']) {
+    'alignment_result' => AlignmentResultNotice(
+      _int(j['id']),
+      j['alignment'] is Json ? EdgeAlignment.fromJson(j['alignment'] as Json) : null,
+      j['error'] as String?,
+    ),
     'welcome' => WelcomeNotice(_int(j['version'])),
     'state' => StateNotice(DaemonState.fromJson(j['state'] as Json? ?? const {})),
     'history' => HistoryNotice([for (final e in _list(j['entries'])) LogEntry.fromJson(e)]),
@@ -1157,6 +1342,48 @@ class OpenPeerSettingsRequest extends Request {
 
   @override
   Json toJson() => {'type': 'open_peer_settings', 'fingerprint': fingerprint};
+}
+
+class DisplayExtensionRequest extends Request {
+  const DisplayExtensionRequest(this.action, {this.fingerprint, this.audio = false});
+  final DisplayAction action;
+  final String? fingerprint;
+  final bool audio;
+
+  @override
+  Json toJson() => {
+    'type': 'display_extension',
+    'action': _snake(action),
+    if (fingerprint != null) 'fingerprint': fingerprint,
+    'audio': audio,
+  };
+}
+
+class SetDisplayPreferencesRequest extends Request {
+  const SetDisplayPreferencesRequest(this.audio, this.shortcuts);
+  final bool audio;
+  final Map<DisplayAction, int> shortcuts;
+
+  @override
+  Json toJson() => {
+    'type': 'set_display_preferences',
+    'audio': audio,
+    'shortcuts': {for (final entry in shortcuts.entries) _snake(entry.key): entry.value},
+  };
+}
+
+class SetDisplayPlansRequest extends Request {
+  const SetDisplayPlansRequest(this.plans);
+  final List<DisplayPlan> plans;
+  @override
+  Json toJson() => {'type': 'set_display_plans', 'plans': plans.map((p) => p.toJson()).toList()};
+}
+
+class RunDisplayPlanRequest extends Request {
+  const RunDisplayPlanRequest(this.id);
+  final int id;
+  @override
+  Json toJson() => {'type': 'run_display_plan', 'id': id};
 }
 
 /// 客户端：按地址连接一台服务端（IP、IP:端口、电脑名），不写端口用 24810。
@@ -1429,4 +1656,43 @@ class SettingsPatch {
   );
 
   bool get isEmpty => toJson().isEmpty;
+}
+
+class AlignmentResultNotice extends Notice {
+  const AlignmentResultNotice(this.id, this.alignment, this.error);
+  final int id;
+  final EdgeAlignment? alignment;
+  final String? error;
+}
+
+class BeginAlignmentRequest extends Request {
+  const BeginAlignmentRequest(
+    this.id,
+    this.fingerprint, {
+    this.localScreen,
+    this.peerScreen,
+    this.horizontal = false,
+    this.reversed = false,
+  });
+  final int id;
+  final String fingerprint;
+  final int? localScreen, peerScreen;
+  final bool horizontal, reversed;
+  @override
+  Json toJson() => {
+    'type': 'begin_alignment',
+    'id': id,
+    'fingerprint': fingerprint,
+    'local_screen': localScreen,
+    'peer_screen': peerScreen,
+    'horizontal': horizontal,
+    'reversed': reversed,
+  };
+}
+
+class CancelAlignmentRequest extends Request {
+  const CancelAlignmentRequest(this.id);
+  final int id;
+  @override
+  Json toJson() => {'type': 'cancel_alignment', 'id': id};
 }

@@ -2,8 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::Side;
 use crate::device::DeviceSettings;
+use crate::{DisplayShortcuts, Side};
 
 /// 本机在一对设备中的角色。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -122,6 +122,9 @@ pub struct Config {
     pub language: Language,
     /// 每天检查一次更新，有新版本时在后台下载好（ADR 0014）。
     pub auto_update: bool,
+    pub display_audio: bool,
+    pub display_shortcuts: DisplayShortcuts,
+    pub display_plans: Vec<crate::DisplayPlan>,
     /// 服务端：单独安排过位置的设备，按先后排列。同一侧的几台按这个先后平分那条边，
     /// 没有列出的设备放在 `side` 一侧、排在列出的后面。
     ///
@@ -141,7 +144,11 @@ impl Config {
     ///   版本 3 里 `swap_cmd_ctrl = false` 的，迁移时给每台已配对的设备写上 `modifiers = "plain"`。
     /// - 5：新增 `language`（缺省 `system`，跟随系统；以前总是中文）。
     /// - 6：新增 `auto_update`（缺省开着）。
-    pub const SCHEMA_VERSION: u32 = 6;
+    /// - 7：新增扩展屏声音和三个本机的全局快捷键。
+    /// - 8：新增按设备保存的扩展屏方案；旧快捷键和声音设置保留。
+    /// - 9：暂停/恢复快捷键，以及普通共享和扩展屏方案的独立物理接缝校准。
+    /// - 10：实屏取点保存两条允许穿过的接缝区间。
+    pub const SCHEMA_VERSION: u32 = 10;
 
     /// 剪贴板单项大小上限的取值范围（MB）。
     pub const CLIPBOARD_LIMIT_MB: std::ops::RangeInclusive<u32> = 1..=64;
@@ -211,6 +218,9 @@ impl Default for Config {
             accent: 0,
             language: Language::System,
             auto_update: true,
+            display_audio: false,
+            display_shortcuts: DisplayShortcuts::default(),
+            display_plans: Vec::new(),
             layout: Vec::new(),
             devices: Vec::new(),
         }

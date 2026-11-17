@@ -11,7 +11,7 @@
   #error 请用 cargo xtask bundle 编译（缺少 SourceDir）
 #endif
 
-#define AppName "ScreenFerry"
+#define AppName "FerryDesk"
 #define AppExe "screenferry.exe"
 #define SettingsExe "screenferry-settings.exe"
 #define ServiceExe "screenferry-service.exe"
@@ -19,7 +19,7 @@
 ; 它以 SYSTEM 身份运行，所在目录必须是普通用户改不了的；其他盘的目录通常做不到。
 ; 装在默认位置时，它和程序在同一个目录。
 #define ServiceDir "{autopf}\ScreenFerry"
-#define Repo "https://github.com/icloudza/screen-ferry"
+#define Repo "https://github.com/ccdalao/FerryDesk"
 
 [Setup]
 ; 安装包的身份：升级、卸载都靠它认出已经装好的那一份，不能改。
@@ -27,11 +27,11 @@ AppId={{CEE535CE-67B9-466B-883F-0E39783CFB8C}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
-AppPublisher=icloudza
+AppPublisher=ccdalao
 AppPublisherURL={#Repo}
 AppSupportURL={#Repo}/issues
 AppUpdatesURL={#Repo}/releases
-AppCopyright=MIT OR Apache-2.0
+AppCopyright=GPL-3.0-only; includes MIT/Apache-2.0 components
 VersionInfoVersion={#AppVersion}
 VersionInfoDescription={#AppName} Setup
 VersionInfoProductName={#AppName}
@@ -40,7 +40,9 @@ PrivilegesRequired=admin
 SetupArchitecture=x64
 ArchitecturesAllowed=x64compatible
 MinVersion=10.0
-DefaultDirName={autopf}\{#AppName}
+DefaultDirName={autopf}\FerryDesk
+; Upgrade with the same AppId, but show the renamed default instead of reusing the old folder.
+UsePreviousAppDir=no
 DisableProgramGroupPage=yes
 WizardStyle=modern
 SetupIconFile=..\..\assets\icons\app-icon-windows.ico
@@ -67,6 +69,8 @@ Name: "chs"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 [CustomMessages]
 en.AppComment=Share one keyboard and mouse across your computers
 chs.AppComment=在多台电脑之间共享一套键盘鼠标
+en.AdminMode=FerryDesk (Administrator mode)
+chs.AdminMode=FerryDesk（管理员模式）
 en.FirewallStatus=Configuring Windows Firewall…
 chs.FirewallStatus=正在设置 Windows 防火墙…
 en.SecureInput=Allow paired computers to control Windows permission prompts (UAC)
@@ -77,11 +81,16 @@ en.ServiceStopFailed=Unable to stop secure input. Close ScreenFerry and try agai
 chs.ServiceStopFailed=无法停止安全输入。请关闭 ScreenFerry 后重试。
 en.ServiceConfigureFailed=Couldn't turn on control of Windows permission prompts. Everything else works. Run the installer again to retry.
 chs.ServiceConfigureFailed=没能开启“操作 Windows 权限提示”，其余功能不受影响。可以重新运行安装包再试一次。
+en.DisplayDriver=Enable using another PC as an extended display
+chs.DisplayDriver=启用双机扩展屏
+en.DisplayDriverFailed=Virtual display driver installation failed. Details are in:
+chs.DisplayDriverFailed=虚拟显示驱动安装失败，具体原因记录在：
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 ; 默认不选；升级时沿用上次的选择（UsePreviousTasks），不会自动增加权限（ADR 0015）。
 Name: "secureinput"; Description: "{cm:SecureInput}"; Flags: unchecked
+Name: "displaydriver"; Description: "{cm:DisplayDriver}"
 
 [InstallDelete]
 ; 设置界面整个换新，不留旧版本的资源文件。
@@ -95,11 +104,19 @@ Type: dirifempty; Name: "{#ServiceDir}"
 
 [Files]
 Source: "{#SourceDir}\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\LICENSE-MIT"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#SourceDir}\LICENSE-APACHE"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#SourceDir}\LICENSE-GPL"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\THIRD-PARTY-MEDIA.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\source.zip"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SourceDir}\{#ServiceExe}"; DestDir: "{#ServiceDir}"; Flags: ignoreversion; Tasks: secureinput
 Source: "{#SourceDir}\settings\*"; DestDir: "{app}\settings"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceDir}\display-driver\*"; DestDir: "{autopf}\ScreenFerry Display Driver"; Flags: ignoreversion skipifsourcedoesntexist; Tasks: displaydriver
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; Comment: "{cm:AppComment}"
+Name: "{autoprograms}\{cm:AdminMode}"; Filename: "{app}\{#AppExe}"; Parameters: "elevate"; Comment: "{cm:AppComment}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
 
 [Run]
@@ -116,6 +133,7 @@ Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags
 [UninstallRun]
 ; 先请 ScreenFerry 正常退出（归还键鼠、松开按键），还在的再强行结束，然后删掉防火墙规则。
 Filename: "{app}\{#AppExe}"; Parameters: "quit"; Flags: runhidden waituntilterminated; RunOnceId: "QuitApp"
+Filename: "{app}\{#AppExe}"; Parameters: "remove-display-driver"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveDisplayDriver"
 Filename: "{#ServiceDir}\{#ServiceExe}"; Parameters: "remove"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "RemoveInputService"; Check: HasInputService
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM {#AppExe} /IM {#SettingsExe}"; Flags: runhidden waituntilterminated; RunOnceId: "KillApp"
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""{#AppName}"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveFirewallRule"
@@ -161,7 +179,7 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Code: Integer;
 begin
-  Running := FileExists(ExpandConstant('{localappdata}\{#AppName}\ipc.json'));
+  Running := FileExists(ExpandConstant('{localappdata}\ScreenFerry\ipc.json'));
   if Running then
   begin
     ExtractTemporaryFile('{#AppExe}');
@@ -200,8 +218,25 @@ var
 begin
   if CurStep = ssPostInstall then
   begin
-    if RegValueExists(HKCU, RunKey, '{#AppName}') then
-      RegWriteStringValue(HKCU, RunKey, '{#AppName}', '"' + ExpandConstant('{app}\{#AppExe}') + '" --autostart');
+    if RegValueExists(HKCU, RunKey, 'ScreenFerry') then
+      RegWriteStringValue(HKCU, RunKey, 'ScreenFerry', '"' + ExpandConstant('{app}\{#AppExe}') + '" --autostart');
+    if WizardIsTaskSelected('displaydriver') and FileExists(ExpandConstant('{autopf}\ScreenFerry Display Driver\MttVDD.inf')) then
+    begin
+      ExtractTemporaryFile('{#AppExe}');
+      DeleteFile(ExpandConstant('{autopf}\ScreenFerry Display Driver\install-result.txt'));
+      if not RegValueExists(HKLM64, 'SOFTWARE\MikeTheTech\VirtualDisplayDriver', 'VDDPATH') then
+        RegWriteStringValue(HKLM64, 'SOFTWARE\MikeTheTech\VirtualDisplayDriver', 'VDDPATH',
+          ExpandConstant('{autopf}\ScreenFerry Display Driver'));
+      if not Exec(ExpandConstant('{tmp}\{#AppExe}'),
+          'install-display-driver "' + ExpandConstant('{autopf}\ScreenFerry Display Driver\MttVDD.inf') + '"',
+          '', SW_HIDE, ewWaitUntilTerminated, Code) or (Code <> 0) then
+        begin
+          Log('Display driver installation failed, exit code ' + IntToStr(Code));
+          SuppressibleMsgBox(CustomMessage('DisplayDriverFailed') + #13#10 +
+            ExpandConstant('{autopf}\ScreenFerry Display Driver\install-result.txt') + #13#10 +
+            'Exit code: ' + IntToStr(Code), mbError, MB_OK, IDOK);
+        end;
+    end;
     { 服务这一步失败不让整个安装失败：键鼠共享、剪贴板和文件照常能用，只是权限提示还得在这台电脑上自己点。 }
     if SecureInputSelected then
     begin
@@ -229,10 +264,14 @@ end;
 { 卸载时删掉指向本程序的开机自启登记，登录时不再去找已经删掉的程序。 }
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  Command: String;
+  Command, DriverPath: String;
 begin
   if (CurUninstallStep = usUninstall)
-    and RegQueryStringValue(HKCU, RunKey, '{#AppName}', Command)
+    and RegQueryStringValue(HKCU, RunKey, 'ScreenFerry', Command)
     and (Pos(Lowercase(ExpandConstant('{app}')), Lowercase(Command)) > 0) then
-    RegDeleteValue(HKCU, RunKey, '{#AppName}');
+    RegDeleteValue(HKCU, RunKey, 'ScreenFerry');
+  if (CurUninstallStep = usPostUninstall)
+    and RegQueryStringValue(HKLM64, 'SOFTWARE\MikeTheTech\VirtualDisplayDriver', 'VDDPATH', DriverPath)
+    and (CompareText(DriverPath, ExpandConstant('{autopf}\ScreenFerry Display Driver')) = 0) then
+    RegDeleteValue(HKLM64, 'SOFTWARE\MikeTheTech\VirtualDisplayDriver', 'VDDPATH');
 end;

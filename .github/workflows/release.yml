@@ -25,13 +25,15 @@ jobs:
   windows:
     name: Windows 安装包
     runs-on: windows-latest
+    env:
+      FERRYDESK_BUILD_LABEL: '小小小龙 测试版'
     steps:
       - uses: actions/checkout@v4
       - name: 安装工具链
         run: rustup show active-toolchain || rustup toolchain install
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: 3.47.8
+          flutter-version: 3.50.0
           channel: stable
       - name: 安装 Inno Setup 7.1.1
         shell: pwsh
@@ -79,7 +81,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         if: steps.secrets.outputs.ok == 'true'
         with:
-          flutter-version: 3.47.8
+          flutter-version: 3.50.0
           channel: stable
       - name: 安装 dmgbuild（做安装盘用）
         if: steps.secrets.outputs.ok == 'true'
@@ -152,5 +154,5 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           gh release create "$GITHUB_REF_NAME" dist/* \
             --draft --verify-tag \
-            --title "ScreenFerry $version" \
+            --title "FerryDesk $version" \
             --notes-file "docs/releases/$version.md"

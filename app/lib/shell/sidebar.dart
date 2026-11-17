@@ -10,6 +10,7 @@ import '../l10n/l10n.dart';
 import '../state/app_scope.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
+import '../widgets/brand.dart';
 import '../widgets/glyph.dart';
 import '../widgets/pressable.dart';
 import '../widgets/surface.dart';
@@ -59,22 +60,54 @@ class Sidebar extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (!forceCollapsed)
-            Padding(
-              padding: const EdgeInsets.only(left: (_railWidth - _toggleSize) / 2),
-              child: Pressable(
-                onTap: () => state.update(() => state.sidebarCollapsed = !state.sidebarCollapsed),
-                hoverColor: c.navHover,
-                radius: 14,
-                tooltip: collapsed ? context.l10n.sidebarExpand : context.l10n.sidebarCollapse,
-                semanticLabel: collapsed ? context.l10n.sidebarExpand : context.l10n.sidebarCollapse,
-                child: SizedBox.square(
-                  dimension: _toggleSize,
-                  child: Center(child: GlyphIcon(Glyph.sidebar, color: c.fg)),
-                ),
-              ),
+          SizedBox(
+            height: 56,
+            child: LayoutBuilder(
+              builder: (context, box) {
+                final showTitle = !collapsed && box.maxWidth >= 180;
+                if (!showTitle) {
+                  return Center(
+                    child: forceCollapsed
+                        ? Tooltip(
+                            message: personalBuildLabel.isEmpty ? 'FerryDesk' : 'FerryDesk\n$personalBuildLabel',
+                            child: const AppIconMark(size: 36),
+                          )
+                        : Pressable(
+                            onTap: () => state.update(() => state.sidebarCollapsed = !state.sidebarCollapsed),
+                            hoverColor: c.navHover,
+                            radius: 14,
+                            tooltip: context.l10n.sidebarExpand,
+                            semanticLabel: context.l10n.sidebarExpand,
+                            child: const SizedBox.square(
+                              dimension: _toggleSize,
+                              child: Center(child: AppIconMark(size: 36)),
+                            ),
+                          ),
+                  );
+                }
+                return Row(
+                  children: [
+                    const AppIconMark(size: 32),
+                    const SizedBox(width: 10),
+                    const Expanded(child: ProductTitle()),
+                    const SizedBox(width: 4),
+                    Pressable(
+                      onTap: () => state.update(() => state.sidebarCollapsed = true),
+                      hoverColor: c.navHover,
+                      radius: 14,
+                      tooltip: context.l10n.sidebarCollapse,
+                      semanticLabel: context.l10n.sidebarCollapse,
+                      child: SizedBox.square(
+                        dimension: _toggleSize,
+                        child: Center(child: GlyphIcon(Glyph.sidebar, color: c.fg)),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
-          const SizedBox(height: 18),
+          ),
+          const SizedBox(height: 24),
           SizedBox(
             height: _topOf(navItems.length) - _itemGap,
             child: Stack(

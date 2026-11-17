@@ -19,8 +19,11 @@
 | 配对连接 | 配对码所需的随机数与双方的确认 | 4 KiB |
 | 文件连接 | 一次文件传输的清单与内容 | 64 KiB + 64 字节 |
 | 邀请连接 | 服务端请客户端连过来 | 4 KiB |
+| 扩展屏媒体连接 | 一次扩展屏会话的音视频分块 | 64 KiB + 64 字节 |
 
 各条连接独立收发，大文件不会阻塞键鼠事件和剪贴板。除邀请连接外，所有连接都由客户端发起，服务端只监听一个端口（缺省 24810）。
+
+扩展屏协商 `DISPLAY_REALTIME` 后，媒体连接仍先由客户端建立 TLS 认证和发送 `DisplayOpen`，随后在这条连接上交换临时 UDP 端口与随机媒体密钥。完成双向加密探测和 TLS 提交后，媒体使用原生 RTP/FEC UDP 通道，`Ping`、`Pong`、`DisplayInput`、反馈和会话结束仍走媒体 TCP；能力未协商或探测不通过时，双方继续使用 `DisplayPacket` 的 TCP 路径。
 
 ### 身份与信任
 
@@ -75,7 +78,7 @@
 ```
 
 - 每条连接的第一条消息必须是 `Hello`，接受方以 `Welcome` 或 `Reject` 回应。握手完成前，除这三条和 `Bye` 外的消息都是协议违规。
-- 先建立输入连接，拿到会话号 `S`；数据连接和文件连接带上 `S`，接受方据此把它们归到同一会话。
+- 先建立输入连接，拿到会话号 `S`；数据连接、文件连接和扩展屏媒体连接带上 `S`，接受方据此把它们归到同一会话。
 - **格式标记**：`Hello`、`Welcome`、`Reject` 开头的 `format` 固定为 `1`（实现里是 `WIRE_FORMAT`）。它不随软件版本变化，也不是功能开关；
   已发布的版本要求双方相等，不等时接受方回 `Reject(INCOMPATIBLE_FORMAT)`。新功能不动它，只加能力位。
 - **能力**：`Welcome` 中的能力是双方能力的交集。只能发送已协商能力范围内的消息：
@@ -87,6 +90,10 @@
   - `AppInfo` 需要 `APP_INFO`：输入连接握手后，双方各发一次自己的程序版本（ADR 0014）
   - `InputBlocked` 需要 `INPUT_BLOCKED`（bit 8）：被控端收不了键鼠时请控制端收回光标，连接保持。对方没有这项能力时，被控端只能结束会话。
   - `SecureChallenge`、`SecureInput` 需要 `SECURE_INPUT`（bit 7）：只有管理员另行授权远端的被控端才声明此能力。
+  - `DisplayControl`、扩展屏媒体连接及其消息需要 `DISPLAY_STREAM`（bit 9）。
+  - `DisplayControl` 的屏幕清单和带布局的启动变体还需 `DISPLAY_PLANS`（bit 10）；旧启动消息继续保持原字节格式。
+  - `DISPLAY_UDP`（bit 11）及其旧消息号保留给开发阶段 SFA1 通道；当前版本不再声明该能力。
+  - 原生 Apollo/Moonlight 媒体协商、探测、反馈及回退需要 `DISPLAY_REALTIME`（bit 12）；未协商时继续 TCP 媒体连接，保留 `WIRE_FORMAT` 不变。
 - `COMMAND_KEY` 说明发送方的快捷键以 Command 键为主（macOS），不是一项能力。服务端看客户端 `Hello` 里的这一位：
   两边一个是一个不是时，才按设置互换 Command 与 Ctrl。不认识这一位的旧版客户端都是 Windows，结果不变。
 - `Hello`、`Welcome`、`Reject` 的消息体格式永久不变，新旧版本的双方总能完成协商。
@@ -119,7 +126,7 @@
 
 ## 5. 消息
 
-类型号的高字节表示类别：`0x00` 握手、心跳与配对，`0x01` 输入，`0x02` 剪贴板，`0x03` 传输，`0x04` 文件。
+类型号的高字节表示类别：`0x00` 握手、心跳与配对，`0x01` 输入会话控制，`0x02` 剪贴板，`0x03` 传输，`0x04` 文件，`0x05` 扩展屏媒体。
 
 | 类型号 | 消息 | 连接 | 消息体 |
 |---|---|---|---|
@@ -142,6 +149,7 @@
 | `0x0107` | SecureChallenge | 输入 | `nonce [32]`，需要 `SECURE_INPUT` |
 | `0x0108` | SecureInput | 输入 | `challenge [32]` · `sequence u64` · `body [32]` · `signature [64]`，需要 `SECURE_INPUT` |
 | `0x0109` | InputBlocked | 输入 | 空，需要 `INPUT_BLOCKED`；被控端发给控制端 |
+| `0x010A` | DisplayControl | 输入 | `kind u8` · `id u64`；仅启动时再带 `direction u8` · `audio bool` |
 | `0x0110` | Key | 输入 | `code u32` · `action u8` |
 | `0x0120` | PointerMotion | 输入 | `position Point` |
 | `0x0121` | PointerDelta | 输入 | `dx i32` · `dy i32` |
@@ -160,8 +168,28 @@
 | `0x0413` | FileData | 文件 | `data bytes`，最多 64 KiB |
 | `0x0414` | FileEnd | 文件 | `index u32` · `sha256 [32]` |
 | `0x0415` | FileDone | 文件 | 无 |
+| `0x0500` | DisplayOpen | 扩展屏媒体 | `id u64` |
+| `0x0501` | DisplayPacket | 扩展屏媒体 | `track u8` · `timestamp_us u64` · `end bool` · `bytes`，每块最多 64 KiB |
+| `0x0502` | DisplayInput | 扩展屏媒体 | 32 字节固定输入编码，与安全输入动作中的普通输入部分一致 |
+| `0x0503` | DisplayUdpOffer | 扩展屏媒体 | `id u64` · `port u16` · `token u64`，由媒体来源端发送 |
+| `0x0504` | DisplayUdpReady | 扩展屏媒体 | `id u64` · `port u16` · `token u64`，由媒体接收端回应 |
+| `0x0505` | DisplayRealtimeOffer | 扩展屏媒体 | `id u64` · `port u16` · `key [32]`，仅在 TLS 上传递随机媒体密钥 |
+| `0x0506` | DisplayRealtimeReady | 扩展屏媒体 | `id u64` · `port u16` |
+| `0x0507` | DisplayRealtimeCommit | 扩展屏媒体 | `id u64` · `udp bool` |
+| `0x0508` | DisplayRealtimeFeedback | 扩展屏媒体 | `frames u32` · `lost u32` · `recovered u32` · `queue_ms u16` · `keyframe bool` |
+| `0x0509` | DisplayRealtimeFallback | 扩展屏媒体 | 空；请求可靠边界后的 TCP 回退 |
 
 设备名 `name` 最多 128 字节。
+
+### 原生实时媒体握手与恢复
+
+双方能力交集有 bit 12 才执行：来源发 Offer（会话号、端口、随机 256 位 key），接收端配置 socket 并回 Ready（本地端口）；双方并行执行 400ms 内的加密双向探测，接收端再回 Ready（成功时本地端口，失败为 0）。来源综合两端探测结果回 Commit；`udp=false` 后双方使用 TCP。创建端点失败的 Offer/Ready 端口为 0，也必须完成同样的可靠消息序列。
+
+UDP 视频负载采用 Apollo v0.4.6 的 RTP、NV_VIDEO_PACKET、八字节短帧头和最多四个 FEC 块。每个数据报外层为 32 字节 AES-GCM 前缀（nonce 12、frameNumber 4、tag 16），帧号参与认证；nonce 的最后字节区分视频/声音/两向探测，其余包含单调计数器。每个会话使用新随机密钥，接收端验证来源端点、认证及不超过 4096 包的防重放窗口后才调用 Moonlight 队列。音频沿用 ScreenFerry 原有 PCM 格式，使用独立 RTP/FEC 队列，不声明支持 Moonlight Opus。
+
+Feedback 每 100ms 报告该周期完整帧数、不可恢复帧数、FEC 恢复分片数及最高本机呈现队列等待毫秒数；`keyframe=true` 表示需从 IDR 恢复。仅完整帧可交付，丢帧/队列溢出后等待独立解码 IDR。来源限制关键帧请求频率，根据反馈调节码率及 pacing；这些时间均是本机时长，不能解释成未校准的跨机单向延迟。
+
+接收端 UDP 连续 1.5 秒无完整帧时发 Fallback，来源先通过 TLS 写 Commit（udp=false）再允许工作线程产出 TCP 编码单元并请求 IDR。来源本地 UDP 发送失败时也使用这一提交边界。接收端清空 UDP 待呈现队列并停止该通道，避免 TCP IDR 后又呈现旧 UDP 依赖帧。会话取消统一关闭 socket、工作线程、虚拟屏和接收窗口。
 
 ### 复合类型
 
@@ -177,7 +205,7 @@
 
 | 字段 | 取值 |
 |---|---|
-| `channel` | 1 输入，2 数据，3 配对，4 文件，5 邀请 |
+| `channel` | 1 输入，2 数据，3 配对，4 文件，5 邀请，6 扩展屏媒体 |
 | `capabilities` | 位 0 `RELATIVE_POINTER`，位 1 `CLIPBOARD`，位 2 `FILES`，位 3 `EDGE_DROP`，位 4 `COMMAND_KEY`，位 5 `REMOTE_SETTINGS`，位 6 `APP_INFO`，位 7 `SECURE_INPUT`，位 8 `INPUT_BLOCKED`；未知位保留，协商时自然被交集去掉 |
 | `side` | 1 左，2 右，3 上，4 下 |
 | DropHint `state` | 0 收起，1 靠近，2 在胶囊上 |
@@ -284,6 +312,19 @@ A（复制的一方）                         B（粘贴的一方）
 - 全部收好、校验通过并放到最终位置后，接收方回 `FileDone`，双方关闭文件连接。
 - 任一方都可以随时在数据连接上发 `FileCancel` 并关闭文件连接。
 
+### 扩展屏
+
+双方协商 `DISPLAY_PLANS` 后支持两个新变体：kind 5 为带布局启动，依次为 id u64、direction u8、audio bool、source_screen u32、viewer_screen u32、side u8、viewer_primary bool；屏幕值 u32::MAX 表示自动选择。kind 6 为清单，id 固定为 0，依次为 side u8、数量 u8（最多 16）和各屏幕的 id u32、bounds、primary bool。清单的 side 是对端相对发送方的位置。未协商时拒绝收到的新变体，也不发送它们，原有功能照常互连。
+
+- 只有现有输入会话已协商 `DISPLAY_STREAM` 时才能发送 `DisplayControl` 和建立扩展屏媒体连接。老版本继续使用键鼠、文件和剪贴板。
+- `kind` 为 0 时启动，1 时确认就绪，2 时结束，3 时报告无法启动，4 时确认首帧已显示。`direction` 为 0 时由请求方创建扩展屏，为 1 时由接收请求的一方创建扩展屏。`audio` 表示是否请求传输声音。
+- 媒体 TCP 连接由键鼠客户端发起，两种显示方向共用此规则。接受方核对已配对的证书指纹、输入会话号和能力位。媒体 `Hello` 带输入会话号，`DisplayOpen` 带本次扩展屏请求号，接收运行时还须确认其对应当前等待的请求且只认领一次。
+- `track` 为 0 表示视频，为 1 表示音频。同一编码单元包含一个或多个连续分块，最多 2 MiB，末块 `end` 为真，时间戳以本次媒体会话开始为原点，单位为微秒。媒体连接中断、帧超时或分块不一致时结束本次媒体连接。
+- 视频为 H.264 Annex B；音频为 48 kHz、双声道、交错排列的小端 16 位 PCM。首版不协商其他媒体格式。
+- 来源端在采集编码前取得额度，最多两个视频编码单元等待消费确认，不预先缓存下一幅旧画面。每个视频单元之后发送 `Ping`，接收端将该标记和媒体按序交给同一工作线程，消费到标记后才回 `Pong`。此确认表示解码输入已消费，不代表物理扫描已完成；解码器缓冲或跳过呈现时也须确认。既有 Ping/Pong 的线格式不变，可与原实现互连。
+- 媒体发送和读取独立调度，输入不等待视频写入。连续绝对鼠标移动只保留最新位置，不跨越点击、按键或滚轮合并。媒体写入、完整单元重组、无响应及消费停顿各有 5 秒时限；短暂抖动不立即结束会话，也不因此扩大视频队列。
+- `DisplayInput` 仅由画面接收端发送，坐标相对 1920×1080 虚拟屏，源端限制在该屏范围。它不承载安全输入签名或系统桌面操作；安全桌面期间暂停画面捕获和这条输入通道。主控扩展自身桌面时暂停该设备的贴边切换；主控显示对端桌面时保留进入对端实体屏的通道，并按本次扩展位置临时调整方向，结束后恢复普通布局。
+
 ### 边缘投递
 
 - 服务端在会话开始和用户改变方向时发 `PeerSide`，告诉客户端“服务端在你的哪一侧”。客户端据此知道朝向服务端的是哪条边，在那里显示胶囊。
@@ -331,3 +372,10 @@ A（接受方）                                  B（发起方）
 | 剪贴板 | 进入屏幕时推送完整内容 | 先通告，粘贴时再按格式拉取，可取消 |
 | 心跳 | 固定间隔保活 | `Ping`/`Pong` 带往返时间，频率由引擎按状态调整 |
 | 版本兼容 | 主次版本号 | 能力位协商，没有单独的协议版本 |
+
+### 物理接缝校准能力
+
+`DISPLAY_ALIGNMENT`（bit 13）表示支持校准后的扩展屏方案。`DisplayControl` kind 7 保持 kind 5 的所有字段，在 `primary` 后追加 `offset i32`、`span u32`（本机接缝千分比），取值为 `100 <= span <= 10000`、`1-span <= offset <= 999`。整边对应 `offset=0,span=1000` 继续使用原 kind 5；kind 7 拒绝此冗余表示。仅双方协商此能力时发送 kind 7，否则校准方案提示对端升级，未校准方案仍正常互连。`WIRE_FORMAT` 不变。
+`ALIGNMENT_RULER`（bit 14）表示支持两端实屏取点。取点控制消息使用 kind 8、9、10，分别表示显示尺子、交换两个点和结束。每个点是沿边缘的千分位坐标，只有两个边界相隔至少 50 个单位时才接受。含取点区间的扩展方案使用 kind 11，附加本机和远端各两个 u16 边界点。能力未协商时保留原有整边映射。
+
+UDP 首个完整帧前的无帧期限为 10 秒，收到首帧后为 3 秒。发送端签署安全输入前合并连续绝对移动，点击、按键、滚轮、进入/离开和控制消息均为屏障；接收端不得丢弃已签署动作，证明序号必须连续。

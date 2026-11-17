@@ -14,6 +14,7 @@ pub mod limits;
 
 mod clipboard;
 mod codec;
+mod display_stream;
 mod edge;
 mod error;
 mod file;
@@ -26,6 +27,10 @@ mod wire;
 
 pub use clipboard::{ClipboardItem, ClipboardOffer, ClipboardRequest};
 pub use codec::{Codec, HEADER_LEN};
+pub use display_stream::{
+    DisplayAccessUnit, DisplayAssembler, DisplayControl, DisplayDirection, DisplayPacket,
+    DisplayTrack, MAX_ACCESS_UNIT,
+};
 pub use edge::{DropHint, HintState};
 pub use error::{DecodeError, EncodeError};
 pub use file::{EntryKind, FileCancel, FileEnd, FileEntry, FileList, FileOffer, FileResume};

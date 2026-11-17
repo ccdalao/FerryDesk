@@ -8,7 +8,7 @@ use ferry_platform::{Displays, Error, Result};
 use ferry_types::{Display, DisplayId, Rect};
 use windows::Win32::Foundation::{LPARAM, RECT};
 use windows::Win32::Graphics::Gdi::{
-    EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO,
+    EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO, MONITORINFOEXW,
 };
 use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForMonitor, MDT_EFFECTIVE_DPI,
@@ -39,7 +39,10 @@ impl Default for WinDisplays {
 
 impl Displays for WinDisplays {
     fn displays(&self) -> Result<Vec<Display>> {
-        let mut found: Vec<Display> = Vec::new();
+        let mut found = MonitorList {
+            displays: Vec::new(),
+            managed: crate::display_stream::surface::managed_monitor_name().unwrap_or(None),
+        };
         // SAFETY: 回调只在本次调用期间运行，`found` 在此期间有效且不被其他代码访问。
         let ok = unsafe {
             EnumDisplayMonitors(
@@ -52,8 +55,13 @@ impl Displays for WinDisplays {
         if !ok.as_bool() {
             return Err(last_error("EnumDisplayMonitors"));
         }
-        Ok(found)
+        Ok(found.displays)
     }
+}
+
+struct MonitorList {
+    displays: Vec<Display>,
+    managed: Option<[u16; 32]>,
 }
 
 unsafe extern "system" fn on_monitor(
@@ -63,14 +71,24 @@ unsafe extern "system" fn on_monitor(
     data: LPARAM,
 ) -> BOOL {
     // SAFETY: `data` 是 `displays` 中传入的 `&mut Vec<Display>`。
-    let found = unsafe { &mut *(data.0 as *mut Vec<Display>) };
+    let found = unsafe { &mut *(data.0 as *mut MonitorList) };
 
-    let mut info = MONITORINFO {
-        cbSize: size_of::<MONITORINFO>() as u32,
+    let mut info = MONITORINFOEXW {
+        monitorInfo: MONITORINFO {
+            cbSize: size_of::<MONITORINFOEXW>() as u32,
+            ..Default::default()
+        },
         ..Default::default()
     };
     // SAFETY: `info` 是正确初始化了 `cbSize` 的本地变量。
-    if unsafe { GetMonitorInfoW(monitor, &mut info) }.as_bool() {
+    if unsafe { GetMonitorInfoW(monitor, &mut info.monitorInfo) }.as_bool() {
+        if found.managed.as_ref().is_some_and(|name| {
+            name.iter()
+                .take_while(|&&ch| ch != 0)
+                .eq(info.szDevice.iter().take_while(|&&ch| ch != 0))
+        }) {
+            return BOOL(1);
+        }
         let (mut dpi_x, mut dpi_y) = (BASE_DPI, BASE_DPI);
         // SAFETY: 两个指针指向本地变量。
         let scale_percent =
@@ -78,9 +96,9 @@ unsafe extern "system" fn on_monitor(
                 Ok(()) => u16::try_from(dpi_x * 100 / BASE_DPI).unwrap_or(100),
                 Err(_) => 100,
             };
-        let r = info.rcMonitor;
-        found.push(Display {
-            id: DisplayId(found.len() as u32),
+        let r = info.monitorInfo.rcMonitor;
+        found.displays.push(Display {
+            id: DisplayId(found.displays.len() as u32),
             bounds: Rect::new(
                 r.left,
                 r.top,
@@ -88,7 +106,7 @@ unsafe extern "system" fn on_monitor(
                 r.bottom.abs_diff(r.top),
             ),
             scale_percent,
-            primary: info.dwFlags & MONITORINFOF_PRIMARY != 0,
+            primary: info.monitorInfo.dwFlags & MONITORINFOF_PRIMARY != 0,
         });
     }
     BOOL(1)

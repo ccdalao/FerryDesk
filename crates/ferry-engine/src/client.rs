@@ -23,7 +23,9 @@ use ferry_core::{Pressed, bounds};
 use ferry_net::discovery::{Browser, Lookup, pick};
 use ferry_net::{ClientStream, Framed, Tls};
 use ferry_platform::{Clipboard, Displays, Error as PlatformError, InputInject};
-use ferry_proto::{Capabilities, Channel, Hello, Message, RejectReason, SecureAction};
+use ferry_proto::{
+    Capabilities, Channel, DisplayControl, Hello, Message, RejectReason, SecureAction,
+};
 use ferry_store::Store;
 use ferry_trust::{Fingerprint, Peer};
 use ferry_types::{DeviceSettings, Display, InputEvent, LockKeys, Point, Side, mark};
@@ -59,10 +61,16 @@ const PER_ADDRESS_TIMEOUT: Duration = Duration::from_secs(2);
 const RTT_INTERVAL: Duration = Duration::from_secs(1);
 
 /// 常驻后台在运行中交给客户端的事。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ClientCommand {
     /// 请服务端打开它的设置界面，翻到本机的设置页。结果以 [`Event::PeerSettings`] 报告。
     OpenPeerSettings,
+    /// 在当前已配对的输入会话上发送扩展屏控制。
+    Display {
+        peer: Fingerprint,
+        session: u64,
+        control: DisplayControl,
+    },
     /// 按地址连接一台服务端：立即去连（正连着别的服务端时先断开），结果以 [`Event::Dialed`] 报告。
     Connect(SocketAddr),
 }
@@ -275,7 +283,7 @@ where
 fn requested(command: ClientCommand) -> Option<Target> {
     match command {
         ClientCommand::Connect(addr) => Some(Target::requested(addr)),
-        ClientCommand::OpenPeerSettings => None,
+        ClientCommand::OpenPeerSettings | ClientCommand::Display { .. } => None,
     }
 }
 
@@ -579,6 +587,14 @@ impl<I: InputInject, K: Clipboard, P: ConfirmPairing> Client<I, K, P> {
             });
         self.secure_input = challenge.is_some();
         let mut caps = capabilities(config.clipboard && device.clipboard, config.command_key);
+        caps.set(Capabilities::DISPLAY_STREAM, self.events.display_stream());
+        caps.set(Capabilities::DISPLAY_PLANS, self.events.display_stream());
+        caps.set(
+            Capabilities::DISPLAY_ALIGNMENT,
+            self.events.display_stream(),
+        );
+        caps.set(Capabilities::ALIGNMENT_RULER, self.events.display_stream());
+        caps.set(Capabilities::DISPLAY_REALTIME, self.events.display_stream());
         if !self.secure_input {
             caps.remove(Capabilities::SECURE_INPUT);
         }
@@ -605,6 +621,9 @@ impl<I: InputInject, K: Clipboard, P: ConfirmPairing> Client<I, K, P> {
         if self.secure_input && !welcome.capabilities.contains(Capabilities::SECURE_INPUT) {
             return Err(Error::Protocol("控制端不支持已启用的安全输入证明"));
         }
+        if self.secure_input {
+            info!("安全输入已启用：管理员设备授权、代理身份核验及远端签署输入协商成功");
+        }
         report(None);
         // 记下这次连上的地址：以后局域网里找不到它时用。记不下来只是少一个兜底。
         if let Err(e) = crate::server::remember_addr(&config.store, server, addr) {
@@ -628,16 +647,24 @@ impl<I: InputInject, K: Clipboard, P: ConfirmPairing> Client<I, K, P> {
         let platform = config
             .command_key
             .then(|| platform_of(welcome.capabilities.contains(Capabilities::COMMAND_KEY)));
+        // Clear only commands left over from the old session, before publishing
+        // the new connection. Actions submitted after Connected must survive.
+        if let Some(commands) = &mut self.commands {
+            while commands.try_recv().is_ok() {}
+        }
         self.events.emit(Event::Connected {
             name: welcome.name.clone(),
             fingerprint: server,
             addr,
             platform,
+            display_stream: welcome.capabilities.contains(Capabilities::DISPLAY_STREAM),
+            display_plans: welcome.capabilities.contains(Capabilities::DISPLAY_PLANS),
+            display_alignment: welcome
+                .capabilities
+                .contains(Capabilities::DISPLAY_ALIGNMENT),
+            alignment_ruler: welcome.capabilities.contains(Capabilities::ALIGNMENT_RULER),
+            session: welcome.session,
         });
-        // 上次会话里没来得及处理的命令已经过时。
-        if let Some(commands) = &mut self.commands {
-            while commands.try_recv().is_ok() {}
-        }
         let shown = match device.alias.trim() {
             "" => welcome.name.clone(),
             alias => alias.to_owned(),
@@ -655,6 +682,25 @@ impl<I: InputInject, K: Clipboard, P: ConfirmPairing> Client<I, K, P> {
             session: welcome.session,
             server,
         };
+        if welcome.capabilities.contains(Capabilities::DISPLAY_STREAM) {
+            let media_link = link.clone();
+            self.events.offer_display_opener(
+                server,
+                addr,
+                welcome
+                    .capabilities
+                    .contains(Capabilities::DISPLAY_REALTIME),
+                welcome.session,
+                Arc::new(move |id| {
+                    let link = media_link.clone();
+                    Box::pin(async move {
+                        let mut stream = link.connect(Channel::DisplayStream).await?;
+                        send(&mut stream, &Message::DisplayOpen { id }).await?;
+                        Ok(stream)
+                    })
+                }),
+            );
+        }
         // 建立数据连接不能阻塞输入循环；安全输入的签署保活也走输入连接。
         let mut data_pending = clipboard || files;
         let mut data_connection = std::pin::pin!(link.connect(Channel::Data));
@@ -706,7 +752,7 @@ impl<I: InputInject, K: Clipboard, P: ConfirmPairing> Client<I, K, P> {
                     }
                     continue;
                 }
-                message = framed.recv() => message?,
+                message = framed.recv_latest_pointer() => message?,
                 () = sleep(local_wait), if self.drop_files && !self.secure_input && !*self.active.borrow() => {
                     local_wait = LOCAL_POINTER_IDLE;
                     if let Some((at, held)) = self.inject.local_pointer() {
@@ -730,6 +776,11 @@ impl<I: InputInject, K: Clipboard, P: ConfirmPairing> Client<I, K, P> {
                                 send(&mut framed, &Message::OpenSettings).await?;
                             }
                             self.events.emit(Event::PeerSettings { peer: server, sent });
+                        }
+                        ClientCommand::Display { peer, session, control } => {
+                            if peer == server && session == welcome.session && welcome.capabilities.contains(Capabilities::DISPLAY_STREAM) {
+                                send(&mut framed, &Message::DisplayControl(control)).await?;
+                            }
                         }
                         // 已经连着这个地址：就算成了。
                         ClientCommand::Connect(to) if to == addr => {
@@ -842,6 +893,33 @@ impl<I: InputInject, K: Clipboard, P: ConfirmPairing> Client<I, K, P> {
             };
             match message {
                 None | Some(Message::Bye(_)) => return Ok(Ended::Session),
+                Some(Message::DisplayControl(control)) => {
+                    if !welcome.capabilities.contains(Capabilities::DISPLAY_STREAM) {
+                        return Err(Error::Protocol("未协商扩展屏能力"));
+                    }
+                    if control.requires_plans()
+                        && !welcome.capabilities.contains(Capabilities::DISPLAY_PLANS)
+                    {
+                        return Err(Error::Protocol("未协商扩展屏方案能力"));
+                    }
+                    if control.requires_alignment()
+                        && !welcome
+                            .capabilities
+                            .contains(Capabilities::DISPLAY_ALIGNMENT)
+                    {
+                        return Err(Error::Protocol("未协商物理接缝校准"));
+                    }
+                    if (control.requires_ruler() || control.requires_contact())
+                        && !welcome.capabilities.contains(Capabilities::ALIGNMENT_RULER)
+                    {
+                        return Err(Error::Protocol("未协商实屏尺能力"));
+                    }
+                    self.events.emit(Event::DisplayControl {
+                        peer: server,
+                        session: welcome.session,
+                        control,
+                    });
+                }
                 Some(Message::Ping { nonce }) => {
                     send(&mut framed, &Message::Pong { nonce }).await?
                 }
@@ -926,6 +1004,7 @@ impl<I: InputInject, K: Clipboard, P: ConfirmPairing> Client<I, K, P> {
                 Some(Message::PeerSide { side }) => {
                     info!(?side, "服务端在本机的这一侧");
                     self.publish_edge(side, &screens, &shown);
+                    self.events.emit(Event::PeerSide { peer: server, side });
                 }
                 Some(Message::DropHint(hint)) => self.edge.remote(server, Some(hint)),
                 Some(Message::AppInfo { version }) => {

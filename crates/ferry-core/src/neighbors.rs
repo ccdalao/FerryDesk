@@ -145,6 +145,12 @@ impl Neighbors {
         }
     }
 
+    pub fn set_alignment(&mut self, id: u64, alignment: ferry_types::EdgeAlignment) {
+        if let Some(neighbor) = self.find_mut(id) {
+            neighbor.switch.set_alignment(alignment);
+        }
+    }
+
     /// 按下或松开鼠标键后重新计算停留时间，拖动期间的等待不带到松开之后。
     pub fn reset_wait(&mut self) {
         for neighbor in &mut self.list {
@@ -162,13 +168,61 @@ impl Neighbors {
         dy: i32,
         now: Instant,
     ) -> Option<(u64, Transition)> {
+        self.local_motion_filtered(position, dx, dy, now, None)
+    }
+
+    /// 按住鼠标键时，仅允许当前扩展桌面的邻居跨屏，不影响其他设备的拖拽保护。
+    pub fn local_motion_filtered(
+        &mut self,
+        position: Point,
+        dx: i32,
+        dy: i32,
+        now: Instant,
+        only: Option<u64>,
+    ) -> Option<(u64, Transition)> {
         if self.active.is_some() {
             return None;
         }
         let mut entered = None;
         for neighbor in &mut self.list {
-            if entered.is_some() || !along_inside(neighbor.place.side, neighbor.segment, position) {
+            if only.is_some_and(|id| id != neighbor.id)
+                || entered.is_some()
+                || !along_inside(neighbor.place.side, neighbor.segment, position)
+            {
                 // 光标不在这一段（或者已经切到了别的邻居）：重新计算在这一段上停了多久。
+                neighbor.switch.left_edge();
+                continue;
+            }
+            if let Some(t) = neighbor.switch.local_motion(position, dx, dy, now) {
+                entered = Some((neighbor.id, t));
+            }
+        }
+        if let Some((id, _)) = entered {
+            self.active = Some(id);
+        }
+        entered
+    }
+
+    /// 本机创建虚拟扩展屏时，扩展屏对应的设备由 Windows 桌面自己承接。
+    /// 它不能同时作为普通键鼠共享的边缘目标，否则进入后会被扩展会话
+    /// 立即中止，光标在同一条边缘反复触发进入和退出。
+    pub fn local_motion_excluding(
+        &mut self,
+        position: Point,
+        dx: i32,
+        dy: i32,
+        now: Instant,
+        excluded: u64,
+    ) -> Option<(u64, Transition)> {
+        if self.active.is_some() {
+            return None;
+        }
+        let mut entered = None;
+        for neighbor in &mut self.list {
+            if neighbor.id == excluded
+                || entered.is_some()
+                || !along_inside(neighbor.place.side, neighbor.segment, position)
+            {
                 neighbor.switch.left_edge();
                 continue;
             }

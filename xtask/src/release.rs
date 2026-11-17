@@ -11,6 +11,7 @@
 //!   `SCREENFERRY_UPDATE_KEY`（私钥文件的内容）、`SCREENFERRY_UPDATE_KEY_PASSWORD`。
 //! - `update-keygen`：生成两把发布密钥（日常用、备用），私钥加口令后写到仓库以外的目录，
 //!   两把公钥写进 `crates/ferry-update/src/keys.rs`。只需运行一次。
+//!   独立分支可显式加 `--fork --out <绝对目录> --password-env <变量名>` 初始化自己的发布信任。
 
 use std::fs;
 use std::io::Cursor;
@@ -42,8 +43,10 @@ fn root() -> PathBuf {
 // ── release ───────────────────────────────────
 
 pub(crate) fn release(args: &[String]) -> Result {
-    let [version] = args else {
-        return Err("用法：cargo xtask release <版本>，例如 0.2.0".into());
+    let (version, prepare_only) = match args {
+        [version] => (version, false),
+        [version, flag] if flag == "--prepare" => (version, true),
+        _ => return Err("用法：cargo xtask release <版本> [--prepare]，例如 0.2.0".into()),
     };
     let parsed =
         ferry_update::Version::parse(version).map_err(|e| format!("版本号 {version}：{e}"))?;
@@ -128,12 +131,24 @@ pub(crate) fn release(args: &[String]) -> Result {
     if !text.contains("## [Unreleased]") {
         return Err("CHANGELOG.md 里没有 ## [Unreleased]".into());
     }
-    let text = text.replacen(
-        "## [Unreleased]",
-        &format!("## [Unreleased]\n\n## [{version}] - {}", today()),
-        1,
-    );
-    fs::write(&changelog, text).map_err(|e| io(&changelog, e))?;
+    // A prepared local build can later take the normal release path without
+    // creating the same changelog section a second time.
+    if !text.contains(&format!("\n## [{version}] - ")) {
+        let text = text.replacen(
+            "## [Unreleased]",
+            &format!("## [Unreleased]\n\n## [{version}] - {}", today()),
+            1,
+        );
+        fs::write(&changelog, text).map_err(|e| io(&changelog, e))?;
+    }
+
+    // Local installable builds need a new version without committing unrelated
+    // in-progress work or creating a public release tag. Use the same version
+    // and changelog preparation as the release path.
+    if prepare_only {
+        println!("✓ 已准备版本 {version}，未提交或创建 tag");
+        return Ok(());
+    }
 
     let mut add = vec!["add"];
     add.extend(files.iter().map(String::as_str));
@@ -141,7 +156,12 @@ pub(crate) fn release(args: &[String]) -> Result {
     run(
         &root,
         "git",
-        &["commit", "-m", &format!("release: {version}")],
+        &[
+            "commit",
+            "--allow-empty",
+            "-m",
+            &format!("release: {version}"),
+        ],
     )?;
     run(
         &root,
@@ -358,19 +378,66 @@ pub(crate) fn sign(args: &[String]) -> Result {
 // ── update-keygen ─────────────────────────────
 
 pub(crate) fn keygen(args: &[String]) -> Result {
-    let out = match args {
-        [] => home()?.join("ScreenFerry-release-keys"),
-        [flag, dir] if flag == "--out" => PathBuf::from(dir),
-        _ => return Err("用法：cargo xtask update-keygen [--out <目录>]".into()),
+    let (out, fork, password_env) = match args {
+        [] => (home()?.join("ScreenFerry-release-keys"), false, None),
+        [flag, dir] if flag == "--out" => (PathBuf::from(dir), false, None),
+        [flag, out_flag, dir, password_flag, name]
+            if flag == "--fork" && out_flag == "--out" && password_flag == "--password-env" =>
+        {
+            (PathBuf::from(dir), true, Some(name))
+        }
+        _ => {
+            return Err(
+                "用法：cargo xtask update-keygen [--out <目录>]，独立分支初始化：--fork --out <仓库外绝对目录> --password-env <变量名>"
+                    .into(),
+            );
+        }
     };
     let root = root();
     if out.starts_with(&root) {
         return Err("私钥不能放在仓库里，换一个目录".into());
     }
-    if !RELEASE_KEYS.is_empty() {
+    if fork && !out.is_absolute() {
+        return Err("独立分支的发布私钥需要放在仓库外的绝对目录".into());
+    }
+    if !fork && !RELEASE_KEYS.is_empty() {
         return Err("keys.rs 里已经有发布公钥了。轮换密钥见 ADR 0014，不要直接覆盖".into());
     }
+    let password = password_env
+        .map(|name| {
+            std::env::var(name)
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| format!("环境变量 {name} 未设置或口令为空，拒绝生成发布密钥"))
+        })
+        .transpose()?;
+
+    // Validate the public-key destination before creating any private material.
+    let keys = root.join("crates/ferry-update/src/keys.rs");
+    let text = fs::read_to_string(&keys).map_err(|e| io(&keys, e))?;
+    let (start, end) = ("// update-keygen：开始", "// update-keygen：结束");
+    let (Some(a), Some(b)) = (text.find(start), text.find(end)) else {
+        return Err("keys.rs 里找不到 update-keygen 的标记".into());
+    };
     fs::create_dir_all(&out).map_err(|e| io(&out, e))?;
+    if fork {
+        // An existing junction or a normalized parent path must not place a
+        // private key inside the repository despite the lexical check above.
+        let actual = out.canonicalize().map_err(|e| io(&out, e))?;
+        let repository = root.canonicalize().map_err(|e| io(&root, e))?;
+        if actual.starts_with(repository) {
+            return Err("私钥不能放在仓库里，换一个目录".into());
+        }
+        for name in ["release", "backup"] {
+            for extension in ["key", "pub"] {
+                let path = out.join(format!("screenferry-{name}.{extension}"));
+                if path.exists() {
+                    return Err(format!("{} 已经存在，不覆盖", path.display()));
+                }
+            }
+        }
+        println!("初始化独立分支发布信任；原分支用户需要先手动安装本分支首版。");
+    }
     let mut publics = Vec::new();
     for (name, label) in [("release", "日常发布用"), ("backup", "备用，私钥离线保存")]
     {
@@ -378,8 +445,10 @@ pub(crate) fn keygen(args: &[String]) -> Result {
         if key_path.exists() {
             return Err(format!("{} 已经存在，不覆盖", key_path.display()));
         }
-        println!("\n为“{label}”的私钥设一个口令（输入时不显示）：");
-        let pair = minisign::KeyPair::generate_encrypted_keypair(None)
+        if password.is_none() {
+            println!("\n为“{label}”的私钥设一个口令（输入时不显示）：");
+        }
+        let pair = minisign::KeyPair::generate_encrypted_keypair(password.clone())
             .map_err(|e| format!("生成密钥失败：{e}"))?;
         let secret = pair
             .sk
@@ -393,12 +462,6 @@ pub(crate) fn keygen(args: &[String]) -> Result {
         publics.push((public, label));
     }
 
-    let keys = root.join("crates/ferry-update/src/keys.rs");
-    let text = fs::read_to_string(&keys).map_err(|e| io(&keys, e))?;
-    let (start, end) = ("// update-keygen：开始", "// update-keygen：结束");
-    let (Some(a), Some(b)) = (text.find(start), text.find(end)) else {
-        return Err("keys.rs 里找不到 update-keygen 的标记".into());
-    };
     let lines: String = publics
         .iter()
         .map(|(key, label)| format!("    // {label}，生成于 {}\n    \"{key}\",\n", today()))

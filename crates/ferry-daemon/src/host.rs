@@ -297,6 +297,12 @@ mod win {
         type Overlay = WinOverlay;
         type Updater = ferry_platform_windows::WinUpdater;
 
+        fn display_backend(&self) -> Option<std::sync::Arc<dyn ferry_platform::DisplayBackend>> {
+            Some(std::sync::Arc::new(
+                ferry_platform_windows::WinDisplayBackend,
+            ))
+        }
+
         fn device_name(&self) -> String {
             std::env::var("COMPUTERNAME")
                 .ok()
@@ -363,6 +369,12 @@ mod win {
             };
             info!(path = %exe.display(), "打开设置界面");
             ferry_platform_windows::allow_foreground();
+            if ferry_platform_windows::is_elevated() {
+                if let Err(error) = ferry_platform_windows::launch_settings_as_user(&exe) {
+                    warn!("打开普通权限设置界面失败：{error}");
+                }
+                return;
+            }
             let mut command = Command::new(&exe);
             // 后台已经没有控制台，标准输入输出都不交给它；工作目录设为它自己所在的目录。
             command

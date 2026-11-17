@@ -14,6 +14,7 @@ import '../theme/tokens.dart';
 import '../widgets/address_dialog.dart';
 import '../widgets/controls.dart';
 import '../widgets/dpi_field.dart';
+import '../widgets/display_plan_dialog.dart';
 import '../widgets/group.dart';
 import '../widgets/key_map_dialog.dart';
 import '../widgets/name_editor.dart';
@@ -45,6 +46,7 @@ class DevicePage extends StatelessWidget {
       leading: SfIconButton(icon: Icons.arrow_back_rounded, tooltip: l.deviceBack, onPressed: state.closeDevice),
       children: [
         _Header(peer: peer, settings: d),
+        if (state.daemon?.displayExtension case final extension?) _DisplayExtension(peer: peer, extension: extension),
         if (!server) _ControlledBanner(peer: peer),
         SectionTitle(l.deviceMouse, note: later),
         SfGroup(
@@ -243,6 +245,196 @@ class DevicePage extends StatelessWidget {
   }
 }
 
+class _DisplayExtension extends StatelessWidget {
+  const _DisplayExtension({required this.peer, required this.extension});
+
+  final PeerInfo peer;
+  final DisplayExtensionInfo extension;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = AppScope.of(context);
+    final strings = context.l10n;
+    final fingerprint = peer.fingerprint;
+    final available = state.online && extension.availablePeers.contains(fingerprint);
+    final active = extension.activePeer == fingerprint;
+    final paused = active && extension.paused;
+    final plans = extension.plans.where((p) => p.peer == fingerprint).toList();
+    Future<void> editPlan([DisplayPlan? original]) async {
+      final plan = await showDisplayPlanDialog(
+        context,
+        peer: peer,
+        localName: state.daemon?.local.name ?? '',
+        extension: extension,
+        peerSide: peer.side ?? ScreenSide.left,
+        original: original,
+      );
+      if (plan != null) {
+        state.setDisplayPlans([
+          for (final existing in extension.plans)
+            if (existing.id != plan.id) existing,
+          plan,
+        ]);
+      }
+    }
+
+    VoidCallback? start(DisplayAction action) => available && (!active || extension.active != action)
+        ? () => state.displayExtension(action, fingerprint: fingerprint, audio: extension.audio)
+        : null;
+    Widget shortcut(DisplayAction action, String title) {
+      final current = extension.shortcuts[action] ?? 0;
+      return PopupMenuButton<int>(
+        tooltip: title,
+        enabled: state.online,
+        child: Text(current == 0 ? strings.deviceOff : 'Ctrl+Alt+Shift+${String.fromCharCode(current)}'),
+        itemBuilder: (_) => [
+          PopupMenuItem(value: 0, child: Text(strings.deviceOff)),
+          for (var key = 48; key <= 57; key++)
+            PopupMenuItem(
+              value: key,
+              enabled:
+                  key == current ||
+                  (!extension.shortcuts.containsValue(key) && !extension.plans.any((p) => p.shortcut == key)),
+              child: Text('Ctrl+Alt+Shift+${String.fromCharCode(key)}'),
+            ),
+        ],
+        onSelected: (key) {
+          final shortcuts = {...extension.shortcuts};
+          if (key == 0) {
+            shortcuts.remove(action);
+          } else {
+            shortcuts[action] = key;
+          }
+          state.setDisplayPreferences(extension.audio, shortcuts);
+        },
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SectionTitle(strings.displayExtension),
+        SfGroup(
+          children: [
+            SfRow(
+              icon: Icons.desktop_windows_outlined,
+              title: strings.displayExtendController,
+              trailing: SmallButton(label: strings.displayStart, onPressed: start(DisplayAction.extendController)),
+            ),
+            SfRow(
+              icon: Icons.monitor_outlined,
+              title: strings.displayExtendControlled,
+              trailing: SmallButton(label: strings.displayStart, onPressed: start(DisplayAction.extendControlled)),
+            ),
+            SfRow(
+              icon: Icons.volume_up_outlined,
+              title: strings.displayAudio,
+              trailing: SfSwitch(
+                value: extension.audio,
+                label: strings.displayAudio,
+                onChanged: state.online ? (value) => state.setDisplayPreferences(value, extension.shortcuts) : null,
+              ),
+            ),
+            SfRow(
+              icon: Icons.pause_circle_outline,
+              title: paused ? strings.displayResume : strings.displayPause,
+              subtitle: strings.displayPauseHint,
+              trailing: SmallButton(
+                label: paused ? strings.displayResume : strings.displayPause,
+                onPressed: active ? () => state.displayExtension(DisplayAction.togglePause) : null,
+              ),
+            ),
+            SfRow(icon: Icons.speed, title: strings.displayInputPriority, subtitle: strings.displayInputPriorityHint),
+            SfRow(
+              icon: Icons.stop_circle_outlined,
+              title: strings.displayStop,
+              subtitle: !available
+                  ? strings.displayUnavailable
+                  : active && !extension.running && !paused
+                  ? strings.displayStarting
+                  : null,
+              trailing: SmallButton(
+                label: strings.displayStop,
+                onPressed: active ? () => state.displayExtension(DisplayAction.stop) : null,
+              ),
+            ),
+          ],
+        ),
+        SectionTitle(strings.displayPlans),
+        SfGroup(
+          children: [
+            for (final plan in plans)
+              SfRow(
+                icon: Icons.desktop_windows_outlined,
+                title: plan.name,
+                subtitle: plan.shortcut == null ? null : 'Ctrl+Alt+Shift+${String.fromCharCode(plan.shortcut!)}',
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SmallButton(
+                      label: strings.displayPlanApply,
+                      onPressed: state.online && extension.configurablePeers.contains(fingerprint)
+                          ? () => state.runDisplayPlan(plan.id)
+                          : null,
+                    ),
+                    SfIconButton(
+                      icon: Icons.edit_outlined,
+                      tooltip: strings.displayPlanEdit,
+                      onPressed: state.online ? () => editPlan(plan) : null,
+                    ),
+                    SfIconButton(
+                      icon: Icons.delete_outline,
+                      tooltip: strings.displayPlanDelete,
+                      onPressed: state.online
+                          ? () => state.setDisplayPlans(extension.plans.where((p) => p.id != plan.id).toList())
+                          : null,
+                    ),
+                  ],
+                ),
+              ),
+            SfRow(
+              icon: Icons.add,
+              title: strings.displayPlanAdd,
+              subtitle: extension.configurablePeers.contains(fingerprint)
+                  ? strings.displayPlanHint
+                  : strings.displayPlanUpgrade,
+              trailing: SmallButton(
+                label: strings.displayPlanAdd,
+                onPressed: state.online && extension.plans.length < 16 ? () => editPlan() : null,
+              ),
+            ),
+          ],
+        ),
+        SectionTitle(strings.displayShortcuts),
+        SfGroup(
+          children: [
+            SfRow(
+              icon: Icons.keyboard_alt_outlined,
+              title: strings.displayExtendController,
+              trailing: shortcut(DisplayAction.extendController, strings.displayExtendController),
+            ),
+            SfRow(
+              icon: Icons.keyboard_alt_outlined,
+              title: strings.displayExtendControlled,
+              trailing: shortcut(DisplayAction.extendControlled, strings.displayExtendControlled),
+            ),
+            SfRow(
+              icon: Icons.keyboard_alt_outlined,
+              title: strings.displayPauseShortcut,
+              trailing: shortcut(DisplayAction.togglePause, strings.displayPauseShortcut),
+            ),
+            SfRow(
+              icon: Icons.keyboard_alt_outlined,
+              title: strings.displayStop,
+              trailing: shortcut(DisplayAction.stop, strings.displayStop),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 /// 修饰键方案下面的一句说明。
 String _presetNote(
   AppLocalizations l,
@@ -323,7 +515,7 @@ class _Header extends StatelessWidget {
                         style: TextStyle(fontSize: 13, color: c.muted, fontFeatures: tabular),
                       ),
                     if (!state.isServer && peer.online) Pill(context.l10n.deviceControlsThis, tone: PillTone.accent),
-                    if (peer.version.isNotEmpty) Pill('ScreenFerry ${peer.version}'),
+                    if (peer.version.isNotEmpty) Pill('FerryDesk ${peer.version}'),
                     if (_newerThan(state, peer.version) case final target?)
                       Pill(context.l10n.devicePeerCanUpdate(target), tone: PillTone.accent),
                     if (place != null)

@@ -41,6 +41,10 @@ pub(crate) fn parse(path: &Path, data: &[u8]) -> Result<Parsed> {
     // 新增的 `mouse_dpi`、`devices` 取缺省值。
     // 版本 4 → 5：只新增了 `language`（缺省跟随系统），读进来即等价。
     // 版本 5 → 6：只新增了 `auto_update`（缺省开着），读进来即等价。
+    // 版本 6 → 7：扩展屏声音及快捷键默认关闭，保留既有键鼠设置。
+    // 版本 7 → 8：方案列表默认空，原有声音、快捷键和普通键鼠布局不变。
+    // 版本 8 → 9：新增暂停/恢复快捷键与物理接缝校准；快捷键默认关闭，校准默认整边对应。
+    // 版本 9 → 10：缺省没有实屏接缝区间，原有对齐继续使用。
     let legacy_swap_cmd_ctrl = if config.schema_version < 4 {
         toml::from_str::<Legacy>(text)
             .map_err(|e| format(e.to_string()))?

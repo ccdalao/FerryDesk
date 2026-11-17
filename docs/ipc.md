@@ -143,6 +143,19 @@ update    { status(idle|checking|up_to_date|available|downloading|ready|installi
 
 ## 5. 界面 → 后台
 
+扩展屏新增两种请求。旧版后台没有扩展屏状态时，界面隐藏操作入口。
+
+- `display_extension` 携带 `action`，取值为 `extend_controller`、`extend_controlled`、`stop`、`toggle_pause`。可选的 `fingerprint` 指定已连接设备，`audio` 表示本次是否传声音。
+- `set_display_preferences` 携带 `audio` 和 `shortcuts`。快捷键对象以这四个 action 为键，值为数字键 ASCII 编号 48–57，缺省关闭。修饰键为 Ctrl + Alt + Shift，各操作不能重复。
+- 状态的可选字段 `display_extension` 包含 `available_peers`、`active_peer`、`active`、`running`、`audio` 和 `shortcuts`。只有首帧实际呈现并确认后 `running` 才为真。
+
+屏幕方案追加请求与状态字段，旧请求保持原含义：
+
+- `set_display_plans` 携带 `plans` 整份替换本机方案列表（最多 16 个），后台统一校验设备、名称、ID 与快捷键冲突后保存。
+- `run_display_plan` 携带本机方案 `id`。仅向已连接且双方支持方案的已配对设备启动；所选屏幕不在当前清单时明确报错。
+- 每个方案包含 `id`、`name`、`peer` 指纹、`local_source`（桌面是否属于保存方案的这台电脑）、`options`、`audio`、可空的 `shortcut`（ASCII 48–57）。`options` 包含可空的 `source_screen` / `viewer_screen`（Windows DISPLAYn 编号，空为自动）、`side`（left/right/top/bottom，接收屏相对于来源实体屏的位置）和 `primary`（source/viewer）。方案与旧操作快捷键统一不得重复。
+- `display_extension` 新增 `plans`、`local_screens`、按设备指纹索引的 `peer_screens`、`configurable_peers` 与可空的 `active_plan`。屏幕对象含 `id`、`bounds {x,y,width,height}`、`primary`。方案只在创建它的电脑保存；接收方仍报告相同的拓展方向和运行状态。
+
 | type | 字段 | 说明 |
 |---|---|---|
 | `hello` | `token`、`version` | 见第 3 节 |
@@ -181,3 +194,5 @@ update    { status(idle|checking|up_to_date|available|downloading|ready|installi
 2. 运行 `UPDATE_IPC_SAMPLES=1 cargo test -p ferry-ipc` 重新生成样例。
 3. 改 `app/lib/ipc/` 中对应的 Dart 类型，直到 `flutter test` 通过。
 4. 只加字段、加消息种类不改版本号；改变已有字段的含义或删除字段时递增 `VERSION`。
+
+扩展屏状态追加 `paused`（旧后台缺省 false）。暂停时 `active=null,running=false`，`active_peer` 指向本机保存的恢复对象；同一个 `toggle_pause` 恢复原方案，`stop` 清除恢复记录。普通设备设置和方案的 `options` 均可带 `alignment {offset,span}`（千分比，缺省 0/1000），两处独立保存。版本 10 起 `alignment` 可以包含 `contact {local:[start,end],remote:[start,end]}`。设置页的对齐入口会让两台电脑显示实屏尺，用户分别在两端点击上、下边界，后台返回取点结果，保存时写入设备设置或扩展屏方案。

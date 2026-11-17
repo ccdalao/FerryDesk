@@ -10,6 +10,7 @@
 
 mod client;
 mod clipboard;
+mod display_stream;
 mod edge_drop;
 mod error;
 mod events;
@@ -23,10 +24,13 @@ mod server;
 
 pub use client::{ClientCommand, ClientConfig, ServerAddr, connect};
 pub use clipboard::{ClipLimit, DEFAULT_CLIP_LIMIT};
+pub use display_stream::{receive_display_unit, send_display_unit};
 pub use edge_drop::{Edge, EdgeDrop, EdgeFeed, Pointer};
 pub use error::{Error, Result};
 pub use events::{
-    ClipImage, ClipSummary, DialError, Event, Events, FoundServer, TransferState, TransferUpdate,
+    ClipImage, ClipSummary, DialError, DisplayConnection, DisplayControlSender,
+    DisplayStreamOpener, Event, Events, FoundServer, IncomingDisplayStream, TransferState,
+    TransferUpdate,
 };
 pub use files::Files;
 pub use invite::{INVITE_PORT, invite};

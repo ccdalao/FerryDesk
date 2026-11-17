@@ -14,7 +14,7 @@ import '../l10n/l10n.dart';
   DialError.refused when invite => (title: l.dialNotWaitingInviteTitle(address), body: l.dialNotWaitingInviteBody),
   DialError.refused => (title: l.dialNotWaitingTitle(address), body: l.dialNotWaitingBody),
   DialError.unreachable => (title: l.dialUnreachableTitle(address), body: l.dialUnreachableBody),
-  DialError.notScreenFerry => (title: l.dialNotScreenFerryTitle(address), body: l.dialNotScreenFerryBody),
+  DialError.notScreenFerry => (title: l.dialNotFerryDeskTitle(address), body: l.dialNotFerryDeskBody),
   DialError.incompatible => (title: l.dialIncompatibleTitle, body: l.dialIncompatibleBody),
   DialError.busy => (title: l.dialBusyTitle(address), body: l.dialBusyBody),
   DialError.wrongRole when invite => (title: l.dialWrongRoleInviteTitle, body: l.dialWrongRoleInviteBody),

@@ -12,7 +12,7 @@ mod util;
 pub use agent::run_agent;
 pub use client::WinInject;
 pub use controller::{install, prepare, remove, run, stop};
-pub use policy::{authorize, revoke};
+pub use policy::{authorize, is_authorized, revoke};
 
 const NAME: &str = "ScreenFerryInput";
 const SERVICE_EXE: &str = "screenferry-service.exe";

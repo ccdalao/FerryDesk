@@ -3,13 +3,16 @@
 //! 常驻后台用它们拼出给设置界面看的状态；命令行模式不关心，传 [`Events::none`]。
 
 use std::fmt;
+use std::future::Future;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use ferry_core::clip_format::png_size;
-use ferry_proto::RejectReason;
+use ferry_net::{ClientStream, Framed, ServerStream};
+use ferry_proto::{DisplayControl, RejectReason};
 use ferry_trust::Fingerprint;
 use ferry_types::{ClipboardContent, ClipboardFormat, TransferId};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
@@ -34,6 +37,24 @@ pub enum Event {
         addr: SocketAddr,
         /// 对方是什么系统（`macos`、`windows`）；看不出来时为 `None`。
         platform: Option<String>,
+        /// 在已配对的输入连接上双方都协商了扩展屏。
+        display_stream: bool,
+        display_plans: bool,
+        display_alignment: bool,
+        alignment_ruler: bool,
+        /// 输入会话号，供扩展屏资源认领使用。
+        session: u64,
+    },
+    /// 对方在已认证的输入连接上发送的扩展屏操作。
+    DisplayControl {
+        peer: Fingerprint,
+        session: u64,
+        control: DisplayControl,
+    },
+    /// 服务端相对于本客户端的当前位置，用于默认拓展方向。
+    PeerSide {
+        peer: Fingerprint,
+        side: ferry_types::Side,
     },
     /// 与 `peer` 的会话结束。`reason` 为 `None` 表示对方正常断开。
     Disconnected {
@@ -262,22 +283,197 @@ impl ClipSummary {
 
 /// 事件的去处。克隆后共用同一个接收方；没有接收方时事件直接丢弃。
 #[derive(Clone, Debug, Default)]
-pub struct Events(Option<UnboundedSender<Event>>);
+pub struct Events {
+    sender: Option<UnboundedSender<Event>>,
+    display: Option<mpsc::Sender<DisplayConnection>>,
+    display_peer: Arc<Mutex<Option<Fingerprint>>>,
+    extension_peer: Arc<Mutex<Option<Fingerprint>>>,
+    extension_alignment: Arc<Mutex<ferry_types::EdgeAlignment>>,
+}
+
+/// 已协商的扩展屏连接资源。控制消息仍经 [`Event::DisplayControl`] 送达。
+pub enum DisplayConnection {
+    Incoming(Box<IncomingDisplayStream>),
+    SendControl(DisplayControlSender),
+    OpenMedia(DisplayStreamOpener),
+}
+
+/// 通过设备证书和输入会话核验的连接。使用前仍须认领活动的扩展屏会话号。
+pub struct IncomingDisplayStream {
+    pub peer: Fingerprint,
+    pub addr: SocketAddr,
+    pub udp: bool,
+    /// 当前输入会话号。重连后，旧会话交来的媒体连接必须丢弃。
+    pub session: u64,
+    pub id: u64,
+    pub framed: Framed<ServerStream>,
+}
+
+/// 向当前服务端输入会话提交扩展屏控制消息。会话关闭时发送失败。
+pub struct DisplayControlSender {
+    pub peer: Fingerprint,
+    pub session: u64,
+    outbox: mpsc::Sender<ferry_proto::Message>,
+}
+
+type OpenDisplay = dyn Fn(u64) -> Pin<Box<dyn Future<Output = crate::Result<Framed<ClientStream>>> + Send>>
+    + Send
+    + Sync;
+
+/// 从当前客户端会话打开独立媒体连接。
+#[derive(Clone)]
+pub struct DisplayStreamOpener {
+    pub peer: Fingerprint,
+    pub addr: SocketAddr,
+    pub udp: bool,
+    pub session: u64,
+    open: Arc<OpenDisplay>,
+}
+
+impl DisplayStreamOpener {
+    pub async fn open(&self, id: u64) -> crate::Result<Framed<ClientStream>> {
+        (self.open)(id).await
+    }
+}
+
+impl DisplayControlSender {
+    pub fn is_closed(&self) -> bool {
+        self.outbox.is_closed()
+    }
+
+    pub fn send(&self, control: DisplayControl) -> bool {
+        self.outbox
+            .try_send(ferry_proto::Message::DisplayControl(control))
+            .is_ok()
+    }
+}
 
 impl Events {
     /// 不需要事件（命令行模式）。
     pub fn none() -> Self {
-        Self(None)
+        Self::default()
     }
 
     /// 新建一对发送与接收端。
     pub fn channel() -> (Self, UnboundedReceiver<Event>) {
         let (tx, rx) = mpsc::unbounded_channel();
-        (Self(Some(tx)), rx)
+        (
+            Self {
+                sender: Some(tx),
+                display: None,
+                display_peer: Arc::default(),
+                extension_peer: Arc::default(),
+                extension_alignment: Arc::default(),
+            },
+            rx,
+        )
+    }
+
+    /// 只有提供了扩展屏会话处理器的常驻应用才声明此能力。
+    pub fn with_display_stream(mut self) -> (Self, mpsc::Receiver<DisplayConnection>) {
+        let (send, receive) = mpsc::channel(32);
+        if self.sender.is_some() {
+            self.display = Some(send);
+        }
+        (self, receive)
+    }
+
+    pub(crate) fn display_stream(&self) -> bool {
+        self.display.is_some()
+    }
+
+    pub(crate) fn set_display_peer(&self, peer: Option<Fingerprint>) {
+        *self.display_peer.lock().unwrap_or_else(|e| e.into_inner()) = peer;
+    }
+
+    pub(crate) fn display_peer(&self) -> Option<Fingerprint> {
+        *self.display_peer.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    pub(crate) fn set_extension_peer(&self, peer: Option<Fingerprint>) {
+        *self
+            .extension_peer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = peer;
+    }
+    pub(crate) fn extension_peer(&self) -> Option<Fingerprint> {
+        *self
+            .extension_peer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+    }
+    pub(crate) fn set_extension_alignment(&self, alignment: ferry_types::EdgeAlignment) {
+        *self
+            .extension_alignment
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = alignment;
+    }
+    pub(crate) fn extension_alignment(&self) -> ferry_types::EdgeAlignment {
+        *self
+            .extension_alignment
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn offer_display(&self, connection: DisplayConnection) {
+        if let Some(display) = &self.display {
+            let _ = display.try_send(connection);
+        }
+    }
+
+    pub(crate) fn offer_display_sender(
+        &self,
+        peer: Fingerprint,
+        session: u64,
+        outbox: mpsc::Sender<ferry_proto::Message>,
+    ) {
+        self.offer_display(DisplayConnection::SendControl(DisplayControlSender {
+            peer,
+            session,
+            outbox,
+        }));
+    }
+
+    pub(crate) fn offer_display_stream(
+        &self,
+        peer: Fingerprint,
+        addr: SocketAddr,
+        udp: bool,
+        session: u64,
+        id: u64,
+        framed: Framed<ServerStream>,
+    ) {
+        self.offer_display(DisplayConnection::Incoming(Box::new(
+            IncomingDisplayStream {
+                peer,
+                addr,
+                udp,
+                session,
+                id,
+                framed,
+            },
+        )));
+    }
+
+    pub(crate) fn offer_display_opener(
+        &self,
+        peer: Fingerprint,
+        addr: SocketAddr,
+        udp: bool,
+        session: u64,
+        open: Arc<OpenDisplay>,
+    ) {
+        self.offer_display(DisplayConnection::OpenMedia(DisplayStreamOpener {
+            peer,
+            addr,
+            udp,
+            session,
+            open,
+        }));
     }
 
     pub fn emit(&self, event: Event) {
-        if let Some(tx) = &self.0 {
+        if let Some(tx) = &self.sender {
             let _ = tx.send(event);
         }
     }

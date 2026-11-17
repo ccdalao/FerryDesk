@@ -10,7 +10,68 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
-  String get appTitle => 'ScreenFerry';
+  String get displayPlans => 'Display Plans';
+
+  @override
+  String get displayPlanAdd => 'New Plan';
+
+  @override
+  String get displayPlanEdit => 'Edit Plan';
+
+  @override
+  String get displayPlanDelete => 'Delete Plan';
+
+  @override
+  String get displayPlanApply => 'Apply Plan';
+
+  @override
+  String get displayPlanName => 'Plan name';
+
+  @override
+  String get displayPlanDesktop => 'Computer whose desktop to extend';
+
+  @override
+  String get displayPlanSourceScreen => 'Physical display on the desktop source';
+
+  @override
+  String get displayPlanViewerScreen => 'Display on the other computer to use as an extension';
+
+  @override
+  String get displayPlanPrimary => 'Windows primary display';
+
+  @override
+  String get displayPlanSourcePrimary => 'Use the source physical display as primary';
+
+  @override
+  String get displayPlanViewerPrimary => 'Use the extension on the other computer as primary';
+
+  @override
+  String get displayPlanPosition => 'Extension position relative to the source display';
+
+  @override
+  String get displayPlanAuto => 'Choose automatically';
+
+  @override
+  String get displayPlanScreen => 'Display';
+
+  @override
+  String get displayPlanMissing => 'Display unavailable; select again';
+
+  @override
+  String get displayPlanUpgrade => 'Connect and update both PCs to use display plans';
+
+  @override
+  String get displayPlanHint =>
+      'Plans are saved on this PC and available in settings, the tray and shortcuts. Stopping restores the original primary display and positions.';
+
+  @override
+  String get displayPlanPreviewMain => 'Primary';
+
+  @override
+  String get displayPlanPreviewSecondary => 'Secondary';
+
+  @override
+  String get appTitle => 'FerryDesk';
 
   @override
   String get commonSave => 'Save';
@@ -115,11 +176,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get problemPermission =>
-      'Allow ScreenFerry to control the keyboard and mouse in System Settings → Privacy & Security';
+      'Allow FerryDesk to control the keyboard and mouse in System Settings → Privacy & Security';
 
   @override
   String problemPortInUse(int port) {
-    return 'Port $port is in use: another keyboard and mouse sharing app or another copy of ScreenFerry may be running';
+    return 'Port $port is in use: another keyboard and mouse sharing app or another copy of FerryDesk may be running';
   }
 
   @override
@@ -129,19 +190,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get offlineNotRunning => 'The background service isn’t running';
 
   @override
-  String get offlineStartHint => 'Start ScreenFerry first. This page fills in once it’s connected.';
+  String get offlineStartHint => 'Start FerryDesk first. This page fills in once it’s connected.';
 
   @override
   String get offlineAutoConnect => 'It connects automatically once started.';
 
   @override
-  String get offlineStartFailed => 'Couldn’t start it. Open ScreenFerry from your Applications folder.';
+  String get offlineStartFailed => 'Couldn’t start it. Open FerryDesk from your Applications folder.';
 
   @override
   String get offlineStarting => 'Starting…';
 
   @override
-  String get offlineStart => 'Start ScreenFerry';
+  String get offlineStart => 'Start FerryDesk';
 
   @override
   String get offlineRetrying => 'Retrying';
@@ -171,7 +232,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aboutBack => 'Back to Settings';
 
   @override
-  String get aboutTagline => 'Share one keyboard and mouse across your computers';
+  String get aboutTagline => 'Display extension and keyboard/mouse sharing';
 
   @override
   String get aboutCheckUpdates => 'Check for Updates';
@@ -180,7 +241,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aboutUpdatesSoon => 'Automatic update checks are coming soon';
 
   @override
-  String get aboutAuthor => 'Author';
+  String get aboutAuthor => 'Maintainer';
 
   @override
   String get aboutLicense => 'License';
@@ -285,7 +346,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dialNotWaitingInviteBody =>
-      'Make sure ScreenFerry is running there and set to “Be controlled”. Older versions can’t be invited and need an update first.';
+      'Make sure FerryDesk is running there and set to “Be controlled”. Older versions can’t be invited and need an update first.';
 
   @override
   String dialNotWaitingTitle(String address) {
@@ -294,7 +355,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dialNotWaitingBody =>
-      'Make sure ScreenFerry is running there and set to “Control other computers” in Settings.';
+      'Make sure FerryDesk is running there and set to “Control other computers” in Settings.';
 
   @override
   String dialUnreachableTitle(String address) {
@@ -303,22 +364,22 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dialUnreachableBody =>
-      'Make sure both computers are on the same network and the address is right. On Windows, allow ScreenFerry through the firewall when asked.';
+      'Make sure both computers are on the same network and the address is right. On Windows, allow FerryDesk through the firewall when asked.';
 
   @override
-  String dialNotScreenFerryTitle(String address) {
-    return '$address isn’t running ScreenFerry';
+  String dialNotFerryDeskTitle(String address) {
+    return '$address isn’t running FerryDesk';
   }
 
   @override
-  String get dialNotScreenFerryBody => 'Check the address and port.';
+  String get dialNotFerryDeskBody => 'Check the address and port.';
 
   @override
   String get dialIncompatibleTitle => 'Incompatible versions';
 
   @override
   String get dialIncompatibleBody =>
-      'The two computers run very different versions of ScreenFerry. Update both to the latest version.';
+      'The two computers run very different versions of FerryDesk. Update both to the latest version.';
 
   @override
   String dialBusyTitle(String address) {
@@ -360,7 +421,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dialInviteHint =>
-      'ScreenFerry must be running there, set to “Be controlled”. Its address is on its Devices page. Port 24811 is used if you leave it out.';
+      'FerryDesk must be running there, set to “Be controlled”. Its address is on its Devices page. Port 24811 is used if you leave it out.';
 
   @override
   String get dialConnectHint =>
@@ -433,7 +494,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get diagVerboseOff =>
-      'Turn on while troubleshooting connections to log more detail. Turns off when ScreenFerry restarts';
+      'Turn on while troubleshooting connections to log more detail. Turns off when FerryDesk restarts';
 
   @override
   String get diagVerboseJustOn => 'Just turned on. Export after the problem happens, then turn it off';
@@ -779,7 +840,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsDataDir => 'Data Folder';
 
   @override
-  String get settingsAbout => 'About ScreenFerry';
+  String get settingsAbout => 'About FerryDesk';
 
   @override
   String settingsVersion(String version) {
@@ -875,7 +936,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get layoutEmpty =>
-      'No paired devices yet. Run ScreenFerry on another computer and pair it, and it will appear next to this one';
+      'No paired devices yet. Run FerryDesk on another computer and pair it, and it will appear next to this one';
 
   @override
   String layoutDropAt(String where) {
@@ -937,7 +998,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get devicesNonePairedHint =>
-      'Run ScreenFerry on another computer. It appears here once both sides confirm the pairing code.';
+      'Run FerryDesk on another computer. It appears here once both sides confirm the pairing code.';
 
   @override
   String get devicesFound => 'Nearby';
@@ -956,7 +1017,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get devicesWaitingHint =>
-      'Run ScreenFerry on another computer and choose this one. A pairing code will appear here for you to confirm.';
+      'Run FerryDesk on another computer and choose this one. A pairing code will appear here for you to confirm.';
 
   @override
   String devicesWaitingHintAddress(String address) {
@@ -1366,6 +1427,33 @@ class AppLocalizationsEn extends AppLocalizations {
   String get deviceConnection => 'Connection';
 
   @override
+  String get displayExtension => 'Display extension';
+
+  @override
+  String get displayShortcuts => 'Display extension shortcuts';
+
+  @override
+  String get displayExtendController => 'Extend the controller onto the controlled PC';
+
+  @override
+  String get displayExtendControlled => 'Extend the controlled PC onto the controller';
+
+  @override
+  String get displayStart => 'Start';
+
+  @override
+  String get displayAudio => 'Play audio from the extended desktop';
+
+  @override
+  String get displayStop => 'Stop display extension';
+
+  @override
+  String get displayUnavailable => 'Connect to a device that supports display extension';
+
+  @override
+  String get displayStarting => 'Waiting for the first frame…';
+
+  @override
   String get deviceThisDevice => 'This Device';
 
   @override
@@ -1532,7 +1620,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get deviceRemoveButton => 'Remove';
 
   @override
-  String get phStarted => 'ScreenFerry started';
+  String get phStarted => 'FerryDesk started';
 
   @override
   String phStartedServer(String name) {
@@ -1785,7 +1873,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String toastPeerSettingsUnsupported(String name) {
-    return 'ScreenFerry on $name is out of date. Open settings on that computer';
+    return 'FerryDesk on $name is out of date. Open settings on that computer';
   }
 
   @override
@@ -1862,7 +1950,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String aboutVersionLine(String version) {
-    return 'Version $version · Share one keyboard and mouse across your computers';
+    return 'Version $version · Display extension and keyboard/mouse sharing';
   }
 
   @override
@@ -1927,7 +2015,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get updateInstallingHint => 'ScreenFerry will reopen by itself, and this window will reconnect';
+  String get updateInstallingHint => 'FerryDesk will reopen by itself, and this window will reconnect';
 
   @override
   String updateManual(String version) {
@@ -2008,7 +2096,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get updateBannerHint =>
-      'Restart ScreenFerry to finish updating. The keyboard and mouse disconnect for about 5 seconds';
+      'Restart FerryDesk to finish updating. The keyboard and mouse disconnect for about 5 seconds';
 
   @override
   String devicePeerCanUpdate(String version) {
@@ -2041,5 +2129,91 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String toastUpdateFailed(String message) {
     return 'The update wasn’t installed: $message';
+  }
+
+  @override
+  String get displayPause => 'Pause Extension';
+
+  @override
+  String get displayResume => 'Resume Extension';
+
+  @override
+  String get displayPauseShortcut => 'Pause / Resume Extension';
+
+  @override
+  String get displayPauseHint =>
+      'Pause returns both PCs to their own desktops; resume restores the previous direction and plan.';
+
+  @override
+  String get displayInputPriority => 'Prioritize Mouse Response';
+
+  @override
+  String get displayInputPriorityHint =>
+      'Input and controls use the highest network priority. Adjust quality for sustained congestion and recover clarity when stable.';
+
+  @override
+  String get layoutDragExtensionHint =>
+      'An extended desktop allows dragging windows across screens. Regular sharing keeps drag protection.';
+
+  @override
+  String get alignmentTitle => 'Screen Alignment Ruler';
+
+  @override
+  String get alignmentAdjust => 'Calibrate';
+
+  @override
+  String get alignmentHint =>
+      'The local edge is 100 units. Resize and drag the other screen to match their physical sizes. Cross only through the blue contact. Units are relative, not centimeters.';
+
+  @override
+  String get alignmentSize => 'Other Screen Size';
+
+  @override
+  String get alignmentOffset => 'Edge Offset';
+
+  @override
+  String get alignmentReset => 'Reset to Full Edge';
+
+  @override
+  String get alignmentApply => 'Save Alignment';
+
+  @override
+  String get alignmentPickHint =>
+      'Select corresponding boundaries on the actual screens. No numeric adjustment is needed.';
+
+  @override
+  String get alignmentPickStart => 'Show rulers on both screens';
+
+  @override
+  String get alignmentPicking => 'Select points on the screen rulers…';
+
+  @override
+  String get alignmentPickSteps =>
+      'For side-by-side screens, use the ruler on the right of each screen. Select two corresponding physical heights on each ruler: upper, then lower. Stacked screens use bottom rulers.';
+
+  @override
+  String get alignmentPickUpgrade => 'Connect and upgrade both PCs to a version supporting screen point calibration.';
+
+  @override
+  String get alignmentDefault => 'Currently using the full edge.';
+
+  @override
+  String get alignmentPicked => 'Points selected. Save to apply the boundaries.';
+
+  @override
+  String get aboutProject => 'Project home';
+
+  @override
+  String get aboutLicenseDetail => 'GPL-3.0-only · Original MIT / Apache-2.0 notices retained';
+
+  @override
+  String get aboutCredits => 'Open-source credits';
+
+  @override
+  String get aboutRestartBackend => 'Finish upgrading and restart the background app';
+
+  @override
+  String aboutBackendVersion(String version) {
+    return 'The background app is still $version. Restart to use FerryDesk updates.';
   }
 }

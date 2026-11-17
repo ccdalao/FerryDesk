@@ -144,10 +144,10 @@ const _runLogPoll = Duration(seconds: 2);
 const _runLogKeep = 1000;
 
 /// 提问题的地方：GitHub 的问题表单，版本和系统预先填好。
-const _issueUrl = 'https://github.com/icloudza/screen-ferry/issues/new';
+const _issueUrl = 'https://github.com/ccdalao/FerryDesk/issues/new';
 
 /// 下载页面：不能自己更新时请用户来这里手动安装。
-const _releasesUrl = 'https://github.com/icloudza/screen-ferry/releases/latest';
+const _releasesUrl = 'https://github.com/ccdalao/FerryDesk/releases/latest';
 
 /// 已经导出的诊断文件。
 class ExportedDiagnostics {
@@ -522,6 +522,61 @@ class AppState extends ChangeNotifier {
   /// 本机被控制时：请对方打开它的设置界面，翻到本机的设置页。
   void openPeerSettings(PeerInfo peer) => _send(OpenPeerSettingsRequest(peer.fingerprint));
 
+  void displayExtension(DisplayAction action, {String? fingerprint, bool audio = false}) =>
+      _send(DisplayExtensionRequest(action, fingerprint: fingerprint, audio: audio));
+
+  void setDisplayPreferences(bool audio, Map<DisplayAction, int> shortcuts) =>
+      _send(SetDisplayPreferencesRequest(audio, shortcuts));
+
+  void setDisplayPlans(List<DisplayPlan> plans) => _send(SetDisplayPlansRequest(plans));
+  void runDisplayPlan(int id) => _send(RunDisplayPlanRequest(id));
+  int _nextAlignment = 1;
+  final _alignmentPending = <int, Completer<EdgeAlignment?>>{};
+  Future<EdgeAlignment?> pickAlignment(
+    String fingerprint, {
+    int? localScreen,
+    int? peerScreen,
+    bool horizontal = false,
+    bool reversed = false,
+  }) async {
+    cancelAlignment();
+    final id = _nextAlignment++;
+    final result = Completer<EdgeAlignment?>();
+    _alignmentPending[id] = result;
+    if (!_send(
+      BeginAlignmentRequest(
+        id,
+        fingerprint,
+        localScreen: localScreen,
+        peerScreen: peerScreen,
+        horizontal: horizontal,
+        reversed: reversed,
+      ),
+    )) {
+      _alignmentPending.remove(id);
+      return null;
+    }
+    try {
+      return await result.future.timeout(
+        const Duration(seconds: 125),
+        onTimeout: () {
+          _send(CancelAlignmentRequest(id));
+          return null;
+        },
+      );
+    } finally {
+      _alignmentPending.remove(id);
+    }
+  }
+
+  void cancelAlignment() {
+    for (final entry in _alignmentPending.entries.toList()) {
+      _send(CancelAlignmentRequest(entry.key));
+      if (!entry.value.isCompleted) entry.value.complete(null);
+    }
+    _alignmentPending.clear();
+  }
+
   /// 正在进行或刚有结果的按地址连接、邀请；没有时为 null。
   DialAttempt? get dial => _dial;
 
@@ -622,6 +677,7 @@ class AppState extends ChangeNotifier {
 
   void _onLink() {
     _link = backend.link.value;
+    if (_link != DaemonLink.online) cancelAlignment();
     // 后台换了一份（重启过）：运行日志从头读。
     _runLogNext = null;
     notifyListeners();
@@ -629,6 +685,11 @@ class AppState extends ChangeNotifier {
 
   void _onNotice(Notice notice) {
     switch (notice) {
+      case AlignmentResultNotice(:final id, :final alignment, :final error):
+        final pending = _alignmentPending.remove(id);
+        if (pending != null && !pending.isCompleted) pending.complete(alignment);
+        if (error != null) showToast(error);
+
       case StateNotice(:final state):
         _onState(state);
       case HistoryNotice(:final entries):
@@ -712,6 +773,10 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    for (final pending in _alignmentPending.values) {
+      if (!pending.isCompleted) pending.complete(null);
+    }
+    _alignmentPending.clear();
     _dialTimer?.cancel();
     _runLogTimer?.cancel();
     WidgetsBinding.instance.removeObserver(_localeWatch);

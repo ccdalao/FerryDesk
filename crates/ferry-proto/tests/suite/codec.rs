@@ -204,3 +204,31 @@ fn file_messages_stay_on_their_channels() {
         Codec::new(Channel::Data).max_payload()
     );
 }
+
+#[test]
+fn display_media_stays_off_input_and_data_connections() {
+    let open = Message::DisplayOpen { id: 42 };
+    let media = Codec::new(Channel::DisplayStream);
+    let mut buf = Vec::new();
+    media.encode(&open, &mut buf).unwrap();
+    for channel in [Channel::Input, Channel::Data, Channel::File] {
+        assert!(matches!(
+            Codec::new(channel).decode(&buf),
+            Err(DecodeError::WrongChannel { .. })
+        ));
+    }
+    let mut packet = ferry_proto::DisplayPacket {
+        track: ferry_proto::DisplayTrack::Video,
+        timestamp_us: 10_000,
+        end: false,
+        bytes: vec![0; ferry_proto::limits::MAX_CHUNK_LEN],
+    };
+    media
+        .encode(&Message::DisplayPacket(packet.clone()), &mut buf)
+        .unwrap();
+    packet.bytes.push(0);
+    assert!(matches!(
+        media.encode(&Message::DisplayPacket(packet), &mut buf),
+        Err(EncodeError::LimitExceeded(_))
+    ));
+}

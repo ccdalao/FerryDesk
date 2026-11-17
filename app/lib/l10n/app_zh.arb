@@ -1,6 +1,26 @@
 {
+  "displayPlans": "副屏方案",
+  "displayPlanAdd": "新建方案",
+  "displayPlanEdit": "编辑方案",
+  "displayPlanDelete": "删除方案",
+  "displayPlanApply": "应用方案",
+  "displayPlanName": "方案名称",
+  "displayPlanDesktop": "扩展哪台电脑的桌面",
+  "displayPlanSourceScreen": "桌面来源电脑的实体屏幕",
+  "displayPlanViewerScreen": "另一台电脑用于显示副屏的屏幕",
+  "displayPlanPrimary": "Windows 主显示器",
+  "displayPlanSourcePrimary": "桌面来源的实体屏为主屏",
+  "displayPlanViewerPrimary": "另一台电脑显示的扩展屏为主屏",
+  "displayPlanPosition": "扩展屏相对于来源实体屏的位置",
+  "displayPlanAuto": "自动选择",
+  "displayPlanScreen": "屏幕",
+  "displayPlanMissing": "屏幕不可用，请重新选择",
+  "displayPlanUpgrade": "屏幕方案需要两台都升级并连接",
+  "displayPlanHint": "方案保存在本机，可从设置、托盘或快捷键应用。取消拓展会恢复原主屏和位置。",
+  "displayPlanPreviewMain": "主屏",
+  "displayPlanPreviewSecondary": "副屏",
   "@@locale": "zh",
-  "appTitle": "ScreenFerry",
+  "appTitle": "FerryDesk",
   "commonSave": "保存",
   "commonCancel": "取消",
   "commonClose": "关闭",
@@ -41,8 +61,8 @@
   "bannerPortInUse": "端口被占用",
   "bannerOther": "后台遇到了问题",
   "bannerOpenSystemSettings": "打开系统设置",
-  "problemPermission": "需要在系统设置的“隐私与安全性”中允许 ScreenFerry 控制键盘和鼠标",
-  "problemPortInUse": "端口 {port} 被占用：可能还开着另一个键鼠共享软件或另一份 ScreenFerry",
+  "problemPermission": "需要在系统设置的“隐私与安全性”中允许 FerryDesk 控制键盘和鼠标",
+  "problemPortInUse": "端口 {port} 被占用：可能还开着另一个键鼠共享软件或另一份 FerryDesk",
   "@problemPortInUse": {
     "placeholders": {
       "port": {
@@ -52,11 +72,11 @@
   },
   "offlineConnecting": "正在连接后台…",
   "offlineNotRunning": "后台没有运行",
-  "offlineStartHint": "请先启动 ScreenFerry，连上后会自动显示。",
+  "offlineStartHint": "请先启动 FerryDesk，连上后会自动显示。",
   "offlineAutoConnect": "启动后会自动连上。",
-  "offlineStartFailed": "启动失败，请在“应用程序”中打开 ScreenFerry",
+  "offlineStartFailed": "启动失败，请在“应用程序”中打开 FerryDesk",
   "offlineStarting": "正在启动…",
-  "offlineStart": "启动 ScreenFerry",
+  "offlineStart": "启动 FerryDesk",
   "offlineRetrying": "正在重试",
   "nameEditorRename": "改名字",
   "accentBlue": "蓝色",
@@ -66,10 +86,10 @@
   "accentPink": "粉色",
   "aboutTitle": "关于",
   "aboutBack": "返回设置",
-  "aboutTagline": "在多台电脑之间共享一套键盘鼠标",
+  "aboutTagline": "双向扩展屏与键鼠共享",
   "aboutCheckUpdates": "检查更新",
   "aboutUpdatesSoon": "自动检查更新即将支持",
-  "aboutAuthor": "作者主页",
+  "aboutAuthor": "项目维护者",
   "aboutLicense": "许可证",
   "logTitle": "日志",
   "logClear": "清空",
@@ -157,7 +177,7 @@
       }
     }
   },
-  "dialNotWaitingInviteBody": "确认那台电脑开着 ScreenFerry，并且选的是“被控制”。它的版本太旧时也不能被邀请，需要先升级。",
+  "dialNotWaitingInviteBody": "确认那台电脑开着 FerryDesk，并且选的是“被控制”。它的版本太旧时也不能被邀请，需要先升级。",
   "dialNotWaitingTitle": "{address} 没有在等待连接",
   "@dialNotWaitingTitle": {
     "placeholders": {
@@ -166,7 +186,7 @@
       }
     }
   },
-  "dialNotWaitingBody": "确认那台电脑开着 ScreenFerry，并且在设置里选的是“控制别的电脑”。",
+  "dialNotWaitingBody": "确认那台电脑开着 FerryDesk，并且在设置里选的是“控制别的电脑”。",
   "dialUnreachableTitle": "连不上 {address}",
   "@dialUnreachableTitle": {
     "placeholders": {
@@ -175,18 +195,18 @@
       }
     }
   },
-  "dialUnreachableBody": "确认两台在同一个网络里、地址没有填错。Windows 第一次运行 ScreenFerry 时会询问防火墙，请允许它通过。",
-  "dialNotScreenFerryTitle": "{address} 上不是 ScreenFerry",
-  "@dialNotScreenFerryTitle": {
+  "dialUnreachableBody": "确认两台在同一个网络里、地址没有填错。Windows 第一次运行 FerryDesk 时会询问防火墙，请允许它通过。",
+  "dialNotFerryDeskTitle": "{address} 上不是 FerryDesk",
+  "@dialNotFerryDeskTitle": {
     "placeholders": {
       "address": {
         "type": "String"
       }
     }
   },
-  "dialNotScreenFerryBody": "确认地址和端口没有填错。",
+  "dialNotFerryDeskBody": "确认地址和端口没有填错。",
   "dialIncompatibleTitle": "版本不兼容",
-  "dialIncompatibleBody": "两台电脑上的 ScreenFerry 版本相差太多，请都升级到最新版。",
+  "dialIncompatibleBody": "两台电脑上的 FerryDesk 版本相差太多，请都升级到最新版。",
   "dialBusyTitle": "{address} 正连着另一台电脑",
   "@dialBusyTitle": {
     "placeholders": {
@@ -218,7 +238,7 @@
       }
     }
   },
-  "dialInviteHint": "那台电脑要开着 ScreenFerry，选的是“被控制”。地址在它的「设备」页上；不写端口时用 24811。",
+  "dialInviteHint": "那台电脑要开着 FerryDesk，选的是“被控制”。地址在它的「设备」页上；不写端口时用 24811。",
   "dialConnectHint": "可以是 IP、IP:端口或电脑名，不写端口时用 24810。地址在那台电脑的「设备」页上。",
   "dialInviteSubtitle": "输入被控制那台的地址，它会自动连过来",
   "dialConnectSubtitle": "输入控制端（键盘鼠标所在那台）的地址",
@@ -260,7 +280,7 @@
   "diagShowInFinder": "在访达中显示",
   "diagShowInExplorer": "在资源管理器中显示",
   "diagVerbose": "详细记录",
-  "diagVerboseOff": "排查连接问题时打开，会多记一些细节。重启 ScreenFerry 后自动关闭",
+  "diagVerboseOff": "排查连接问题时打开，会多记一些细节。重启 FerryDesk 后自动关闭",
   "diagVerboseJustOn": "刚刚打开。问题出现后导出，再把它关掉",
   "diagVerboseOnFor": "已打开 {minutes} 分钟。问题出现后导出，再把它关掉",
   "@diagVerboseOnFor": {
@@ -488,7 +508,7 @@
   "settingsAnnounce": "在局域网里广播本机",
   "settingsAnnounceHint": "另一台电脑不用填地址就能找到本机",
   "settingsDataDir": "数据目录",
-  "settingsAbout": "关于 ScreenFerry",
+  "settingsAbout": "关于 FerryDesk",
   "settingsVersion": "版本 {version}",
   "@settingsVersion": {
     "placeholders": {
@@ -559,7 +579,7 @@
   },
   "layoutCursorOnIt": "光标在这台上",
   "layoutMovable": "可以拖动",
-  "layoutEmpty": "还没有配对的设备。在另一台电脑上运行 ScreenFerry 并配对后，它会出现在本机旁边",
+  "layoutEmpty": "还没有配对的设备。在另一台电脑上运行 FerryDesk 并配对后，它会出现在本机旁边",
   "layoutDropAt": "松手后放到{where}",
   "@layoutDropAt": {
     "placeholders": {
@@ -615,13 +635,13 @@
     }
   },
   "devicesNonePaired": "还没有配对的设备",
-  "devicesNonePairedHint": "在另一台电脑上运行 ScreenFerry，两边核对配对码后会出现在这里。",
+  "devicesNonePairedHint": "在另一台电脑上运行 FerryDesk，两边核对配对码后会出现在这里。",
   "devicesFound": "在局域网里发现",
   "devicesNotPairedYet": "还没配对",
   "devicesInvite": "邀请一台电脑",
   "devicesConnectByAddress": "按地址连接",
   "devicesWaiting": "等另一台电脑来找本机",
-  "devicesWaitingHint": "在另一台电脑上运行 ScreenFerry 并选择本机后，这里会弹出配对码请你核对。",
+  "devicesWaitingHint": "在另一台电脑上运行 FerryDesk 并选择本机后，这里会弹出配对码请你核对。",
   "devicesWaitingHintAddress": "它在局域网里找不到本机时，在那台电脑上按地址连接 {address}；那台电脑没有键盘鼠标时，在这里邀请它连过来。",
   "@devicesWaitingHintAddress": {
     "placeholders": {
@@ -890,6 +910,15 @@
   "deviceDropFiles": "拖文件给它",
   "deviceDropFilesHint": "把文件拖到朝向它的屏幕边上就发过去",
   "deviceConnection": "连接",
+  "displayExtension": "扩展屏",
+  "displayShortcuts": "扩展屏快捷键",
+  "displayExtendController": "用被控电脑屏幕扩展主控",
+  "displayExtendControlled": "用主控电脑屏幕扩展被控",
+  "displayStart": "开启",
+  "displayAudio": "播放扩展端的声音",
+  "displayStop": "取消副屏拓展",
+  "displayUnavailable": "请连接支持扩展屏的设备",
+  "displayStarting": "正在等待第一帧…",
   "deviceThisDevice": "这台设备",
   "devicePresetMacDiffer": "在 {name} 上按 ⌘C、⌘V 就是复制、粘贴",
   "@devicePresetMacDiffer": {
@@ -1009,7 +1038,7 @@
   "deviceRemoveConfirm": "确定吗？移除后需要重新配对，这台的设置一并删除",
   "deviceRemoveHint": "移除后需要重新配对",
   "deviceRemoveButton": "移除",
-  "phStarted": "ScreenFerry 已启动",
+  "phStarted": "FerryDesk 已启动",
   "phStartedServer": "{name} · 键鼠在本机",
   "@phStartedServer": {
     "placeholders": {
@@ -1343,7 +1372,7 @@
       }
     }
   },
-  "toastPeerSettingsUnsupported": "{name} 上的 ScreenFerry 版本较旧，请在那台电脑上打开设置",
+  "toastPeerSettingsUnsupported": "{name} 上的 FerryDesk 版本较旧，请在那台电脑上打开设置",
   "@toastPeerSettingsUnsupported": {
     "placeholders": {
       "name": {
@@ -1433,7 +1462,7 @@
       }
     }
   },
-  "aboutVersionLine": "版本 {version} · 在多台电脑之间共享一套键盘鼠标",
+  "aboutVersionLine": "版本 {version} · 双向扩展屏与键鼠共享",
   "@aboutVersionLine": {
     "placeholders": {
       "version": {
@@ -1502,7 +1531,7 @@
       }
     }
   },
-  "updateInstallingHint": "ScreenFerry 会自己重新打开，这个窗口随后重新连上",
+  "updateInstallingHint": "FerryDesk 会自己重新打开，这个窗口随后重新连上",
   "updateManual": "发现新版本 {version}，要手动安装",
   "@updateManual": {
     "placeholders": {
@@ -1559,7 +1588,7 @@
       }
     }
   },
-  "updateBannerHint": "重启 ScreenFerry 完成更新，键鼠会断开约 5 秒",
+  "updateBannerHint": "重启 FerryDesk 完成更新，键鼠会断开约 5 秒",
   "devicePeerCanUpdate": "可以更新到 {version}",
   "@devicePeerCanUpdate": {
     "placeholders": {
@@ -1605,6 +1634,39 @@
   "@toastUpdateFailed": {
     "placeholders": {
       "message": {
+        "type": "String"
+      }
+    }
+  },
+  "displayPause": "暂停扩展屏",
+  "displayResume": "恢复扩展屏",
+  "displayPauseShortcut": "暂停／恢复扩展屏",
+  "displayPauseHint": "暂停后两台各用各的桌面；恢复时沿用刚才的方向和方案",
+  "displayInputPriority": "鼠标响应优先",
+  "displayInputPriorityHint": "扩展期间由扩展窗口独占鼠标输入，可按 Ctrl+Alt+Esc 归还控制；持续拥塞时降低画质，链路稳定后恢复清晰度。",
+  "layoutDragExtensionHint": "扩展桌面允许按住鼠标跨屏移动窗口；普通共享仍保留拖拽保护",
+  "alignmentTitle": "屏幕对齐尺",
+  "alignmentAdjust": "校准",
+  "alignmentHint": "把本机接缝长度作为 100 格，按实际大小缩放另一块屏幕并拖动对齐。蓝色部分可以穿过，空白部分不会切屏。刻度为相对比例，不是实际厘米。",
+  "alignmentSize": "另一块屏幕的相对尺寸",
+  "alignmentOffset": "接缝偏移",
+  "alignmentReset": "恢复整边对应",
+  "alignmentApply": "保存对齐",
+  "alignmentPickHint": "在两台实际屏幕上点选对应边界，程序自动对齐，不用调整数值。",
+  "alignmentPickStart": "在两台屏幕显示尺子",
+  "alignmentPicking": "请在实屏尺上取点…",
+  "alignmentPickSteps": "左右排列时尺子显示在两块屏幕右侧。请在每台尺子上各点两处相同实际高度的位置；先选上界，再选下界。上下排列时使用底部尺子。",
+  "alignmentPickUpgrade": "两台电脑需连接并升级至支持实屏取点的版本。",
+  "alignmentDefault": "当前使用整条边缘对应。",
+  "alignmentPicked": "已取点，保存后按所选边界对齐。",
+  "aboutProject": "项目主页",
+  "aboutLicenseDetail": "GPL-3.0-only · 保留上游 MIT / Apache-2.0 许可",
+  "aboutCredits": "开源致谢",
+  "aboutRestartBackend": "请完成升级并重启后台",
+  "aboutBackendVersion": "后台仍为 {version}，重启后使用 FerryDesk 更新服务。",
+  "@aboutBackendVersion": {
+    "placeholders": {
+      "version": {
         "type": "String"
       }
     }

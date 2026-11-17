@@ -10,10 +10,12 @@ use super::controller;
 use super::pipe::{IO_WAIT, Pipe};
 use super::security::{self, Installed};
 use super::util::{Handle, failure, ticks};
+use crate::event_loop::latency::InputLatency;
 use crate::inject::LocalInject;
 
 /// 根据已安装服务的状态选择本地注入或特权输入代理。
 pub struct WinInject {
+    _latency: InputLatency,
     local: LocalInject,
     privileged: bool,
     connection: Option<Client>,
@@ -23,6 +25,7 @@ pub struct WinInject {
 struct Client {
     pipe: Pipe,
     sequence: u64,
+    slow_report: Instant,
     _peer: Handle,
     _installed: Installed,
 }
@@ -30,6 +33,7 @@ struct Client {
 impl WinInject {
     pub fn new() -> Self {
         Self {
+            _latency: InputLatency::start(),
             local: LocalInject::new(),
             // 安装时选了安全输入、服务在运行、服务程序受保护，才走特权代理；否则就是普通权限注入。
             privileged: controller::running() && Installed::registered().is_ok(),
@@ -166,6 +170,7 @@ impl Client {
         let mut connection = Self {
             pipe,
             sequence: 0,
+            slow_report: Instant::now() - std::time::Duration::from_secs(1),
             _peer: peer,
             _installed: installed,
         };
@@ -190,6 +195,16 @@ impl Client {
             .pipe
             .read(deadline, None)?
             .ok_or_else(|| failure("输入代理响应超时"))?;
+        let elapsed = IO_WAIT.saturating_sub(deadline.saturating_duration_since(Instant::now()));
+        if elapsed.as_millis() >= 16
+            && self.slow_report.elapsed() >= std::time::Duration::from_secs(1)
+        {
+            self.slow_report = Instant::now();
+            tracing::debug!(
+                elapsed_ms = elapsed.as_secs_f64() * 1000.0,
+                "安全输入管道处理超出一帧"
+            );
+        }
         let response = Response::decode(&frame).map_err(|e| failure(&e.to_string()))?;
         if response.sequence != self.sequence {
             return Err(failure("输入代理回复序号不匹配"));

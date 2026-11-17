@@ -266,7 +266,10 @@ pub(super) fn validate_acl(
             if header.AceType == 0 {
                 let allowed = &*ace.cast::<ACCESS_ALLOWED_ACE>();
                 let sid = PSID((&allowed.SidStart as *const u32).cast_mut().cast());
-                if allowed.Mask & dangerous != 0 && !trusted(sid)? {
+                // CREATOR OWNER 是继承占位 SID，不是能直接登录/匹配令牌的账户。
+                // 继承到子对象时才替换成创建者；本对象 owner 已在上面验证为 SYSTEM/管理员。
+                // 不能把 Windows 默认 SOFTWARE 上的这条继承 ACE 当成普通用户可写。
+                if allowed.Mask & dangerous != 0 && sid_text(sid)? != "S-1-3-0" && !trusted(sid)? {
                     return Err(failure("输入服务安装路径对非管理员可写"));
                 }
             } else if header.AceType != 1 && header.AceType != 2 && header.AceType != 17 {

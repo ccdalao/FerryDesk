@@ -87,16 +87,16 @@ VS_VERSION_INFO VERSIONINFO
 BEGIN
     BLOCK "StringFileInfo"
     BEGIN
-        // 简体中文、Unicode：任务管理器和文件属性里显示“ScreenFerry 设置”。
+        // 简体中文、Unicode：任务管理器和文件属性里显示“FerryDesk 设置”。
         BLOCK "080404b0"
         BEGIN
-            VALUE "CompanyName", "icloudza" "\0"
-            VALUE "FileDescription", "ScreenFerry 设置" "\0"
+            VALUE "CompanyName", "ccdalao" "\0"
+            VALUE "FileDescription", "FerryDesk 设置" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "screenferry-settings" "\0"
             VALUE "LegalCopyright", "MIT OR Apache-2.0" "\0"
             VALUE "OriginalFilename", "screenferry-settings.exe" "\0"
-            VALUE "ProductName", "ScreenFerry" "\0"
+            VALUE "ProductName", "FerryDesk" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

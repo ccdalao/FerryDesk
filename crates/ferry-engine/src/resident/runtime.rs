@@ -8,17 +8,19 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use ferry_core::Redactor;
+use ferry_core::{DisplaySession, DisplaySessionKey, Redactor};
 
 use ferry_ipc::{
-    ClipboardImage, ClipboardSync, DialError as IpcDialError, FoundDevice, Link, LinkStatus, Local,
-    LogIcon, LogKind, Notice, PairingPrompt, PeerInfo, PeerRef, Phrase, Problem, ProblemKind,
-    Request, Settings, SettingsPatch, State,
+    ClipboardImage, ClipboardSync, DialError as IpcDialError, DisplayExtensionInfo, FoundDevice,
+    Link, LinkStatus, Local, LogIcon, LogKind, Notice, PairingPrompt, PeerInfo, PeerRef, Phrase,
+    Problem, ProblemKind, Request, Settings, SettingsPatch, State,
 };
+use ferry_proto::{DisplayControl, DisplayDirection};
 use ferry_store::Store;
 use ferry_trust::{Fingerprint, PeerList};
 use ferry_types::{
-    ClipboardFormat, Config, DeviceSettings, Lang, Role, Side, mark, uses_command_key,
+    ClipboardFormat, Config, DeviceSettings, DisplayOptions, DisplayPlan, DisplayScreen, Lang,
+    Role, Side, mark, uses_command_key,
 };
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot, watch};
@@ -27,10 +29,11 @@ use tracing::{info, warn};
 
 use super::confirm::{PairAsk, UiConfirm};
 use super::diagnostics;
+use super::display_stream::{ActiveDisplay, run_media};
 use super::record::{Activity, Log, Rtt, now_ms};
 use super::ui::UiEvent;
 use super::update::{Outcome, UpdateEvent, Updates};
-use super::{Command, Host, Summary};
+use super::{Command, DisplayAction, Host, Summary};
 use crate::client::{ClientCommand, ClientConfig, ServerAddr, connect};
 use crate::clipboard::ClipLimit;
 use crate::edge_drop::EdgeDrop;
@@ -40,8 +43,11 @@ use crate::files::Files;
 use crate::invite::{INVITE_PORT, invite};
 use crate::link::DEFAULT_PORT;
 use crate::server::{Live, ServerConfig, serve};
+use crate::{DisplayConnection, DisplayControlSender, DisplayStreamOpener};
 
 /// 缺少权限时多久再试一次：用户在系统设置里勾上之后很快就能用。
+mod alignment;
+
 const RETRY_PERMISSION: Duration = Duration::from_secs(2);
 /// 配对被拒绝后多久再试。
 const RETRY_PAIRING: Duration = Duration::from_secs(3);
@@ -72,6 +78,22 @@ struct LinkInfo {
     /// 连上的时刻（Unix 毫秒）。
     since: i64,
     rtt: Rtt,
+    session: u64,
+    display_stream: bool,
+    display_plans: bool,
+    display_alignment: bool,
+    alignment_ruler: bool,
+    screens: Vec<DisplayScreen>,
+    peer_side: Option<Side>,
+    catalog_sent: bool,
+}
+
+struct PausedDisplay {
+    peer: Fingerprint,
+    local_source: bool,
+    audio: bool,
+    options: DisplayOptions,
+    plan: Option<u32>,
 }
 
 pub(crate) struct Runtime<H: Host> {
@@ -101,6 +123,14 @@ pub(crate) struct Runtime<H: Host> {
     cursor: Option<Fingerprint>,
     /// 摘要里的那台，也是 `send_files` 不指定时发给的那台：光标最近去过的，否则最近连上的。
     focus: Option<Fingerprint>,
+    display: Option<ActiveDisplay>,
+    paused_display: Option<PausedDisplay>,
+    ruler: Option<alignment::Ruler<H::Overlay>>,
+    display_cleanup: Vec<JoinHandle<Result<()>>>,
+    display_recover_at: Instant,
+    local_screens: Vec<DisplayScreen>,
+    display_senders: HashMap<Fingerprint, DisplayControlSender>,
+    display_opener: Option<DisplayStreamOpener>,
     clipboard: Option<ClipboardSync>,
     /// 最近一次剪贴板同步的对方。界面上的名字按它现在的名字显示（中途可能改了名）。
     clipboard_peer: Option<Fingerprint>,
@@ -182,7 +212,18 @@ impl<H: Host> Runtime<H> {
         if let Err(e) = store.clear_blobs() {
             warn!("清理上次的剪贴板预览失败：{e}");
         }
+        let display_cleanup = host
+            .display_backend()
+            .map(|backend| {
+                tokio::task::spawn_blocking(move || backend.recover().map_err(Error::from))
+            })
+            .into_iter()
+            .collect();
         let mut runtime = Self {
+            local_screens: host
+                .display_backend()
+                .and_then(|b| b.screens().ok())
+                .unwrap_or_default(),
             store,
             host,
             config,
@@ -201,6 +242,13 @@ impl<H: Host> Runtime<H> {
             links: Vec::new(),
             cursor: None,
             focus: None,
+            display: None,
+            paused_display: None,
+            ruler: None,
+            display_cleanup,
+            display_recover_at: Instant::now() + Duration::from_secs(3),
+            display_senders: HashMap::new(),
+            display_opener: None,
             clipboard: None,
             clipboard_peer: None,
             clip_limit,
@@ -358,6 +406,8 @@ impl<H: Host> Runtime<H> {
 
     /// 停下引擎：丢弃它的任务，引擎随之归还鼠标控制、松开按键、断开连接。
     pub(crate) async fn stop_engine(&mut self) {
+        self.end_ruler(None, Some("共享已停止".into()));
+        self.paused_display = None;
         if let Some(task) = self.engine.take() {
             task.handle.abort();
             let _ = task.handle.await;
@@ -365,6 +415,11 @@ impl<H: Host> Runtime<H> {
         self.edge.feed().reset();
         self.invite_port = None;
         self.drop_link();
+        for task in self.display_cleanup.drain(..) {
+            if let Err(error) = task.await {
+                warn!(%error, "等待扩展屏资源回收失败");
+            }
+        }
         self.retry_at = None;
     }
 
@@ -460,9 +515,18 @@ impl<H: Host> Runtime<H> {
     }
 
     fn live(&self) -> Live {
+        let mut layout = self.config.layout.clone();
+        if let Some(display) = self.display.as_ref().filter(|d| !d.session.local_source) {
+            let fingerprint = Fingerprint::from_bytes(display.session.key.fingerprint).to_hex();
+            layout.retain(|p| p.fingerprint != fingerprint);
+            layout.push(ferry_types::Placement {
+                fingerprint,
+                side: display.options.side.opposite(),
+            });
+        }
         Live {
             side: self.config.side,
-            layout: self.config.layout.clone(),
+            layout,
             devices: self.config.devices.clone(),
             fallback: DeviceSettings::default(),
             mouse_dpi: self.config.mouse_dpi(),
@@ -471,6 +535,9 @@ impl<H: Host> Runtime<H> {
 
     /// 连接全没了（引擎停下）：记下各台设备最后在线的时刻，清空与连接有关的状态。
     fn drop_link(&mut self) {
+        self.stop_display();
+        self.display_senders.clear();
+        self.display_opener = None;
         if self.engine.is_none() {
             self.port = None;
         }
@@ -587,7 +654,18 @@ impl<H: Host> Runtime<H> {
                 fingerprint,
                 addr,
                 platform,
+                display_stream,
+                display_plans,
+                display_alignment,
+                alignment_ruler,
+                session,
             } => {
+                if self.display.as_ref().is_some_and(|d| {
+                    d.session.key.fingerprint == *fingerprint.as_bytes()
+                        && d.session.key.input_session != session
+                }) {
+                    self.stop_display();
+                }
                 if let Some(platform) = platform {
                     self.platforms.insert(fingerprint, platform);
                 }
@@ -595,6 +673,12 @@ impl<H: Host> Runtime<H> {
                 self.clear_problem();
                 self.links.retain(|l| l.fingerprint != fingerprint);
                 self.links.push(LinkInfo {
+                    display_plans,
+                    display_alignment,
+                    alignment_ruler,
+                    screens: Vec::new(),
+                    peer_side: None,
+                    catalog_sent: false,
                     fingerprint,
                     peer: PeerRef {
                         name: name.clone(),
@@ -604,6 +688,8 @@ impl<H: Host> Runtime<H> {
                     },
                     since: now_ms(),
                     rtt: Rtt::default(),
+                    session,
+                    display_stream,
                 });
                 self.focus = Some(fingerprint);
                 // 刚连上时光标总在服务端。
@@ -624,6 +710,20 @@ impl<H: Host> Runtime<H> {
                 );
             }
             Event::Disconnected { peer, reason } => {
+                if self
+                    .display
+                    .as_ref()
+                    .is_some_and(|d| d.session.key.fingerprint == *peer.as_bytes())
+                {
+                    self.stop_display();
+                }
+                if self
+                    .display_senders
+                    .get(&peer)
+                    .is_some_and(|s| s.is_closed())
+                {
+                    self.display_senders.remove(&peer);
+                }
                 let name = self.peer_name(&peer);
                 self.links.retain(|l| l.fingerprint != peer);
                 self.last_seen.insert(peer, now_ms());
@@ -656,6 +756,11 @@ impl<H: Host> Runtime<H> {
                 }
             }
             Event::Transfer(update) => self.on_transfer(update),
+            Event::DisplayControl {
+                peer,
+                session,
+                control,
+            } => self.on_display_control(peer, session, control),
             Event::OpenSettings { peer } => {
                 let name = self.peer_name(&peer);
                 self.log(
@@ -674,6 +779,11 @@ impl<H: Host> Runtime<H> {
                     });
                 }
                 self.open_settings();
+            }
+            Event::PeerSide { peer, side } => {
+                if let Some(link) = self.links.iter_mut().find(|l| l.fingerprint == peer) {
+                    link.peer_side = Some(side);
+                }
             }
             Event::PeerVersion { peer, version } => {
                 self.versions.insert(peer, version);
@@ -959,11 +1069,68 @@ impl<H: Host> Runtime<H> {
 
     async fn on_request(&mut self, from: u64, request: Request) {
         match request {
+            Request::BeginAlignment {
+                id,
+                fingerprint,
+                local_screen,
+                peer_screen,
+                horizontal,
+                reversed,
+            } => self.begin_ruler(
+                from,
+                id,
+                &fingerprint,
+                local_screen,
+                peer_screen,
+                horizontal,
+                reversed,
+            ),
+            Request::CancelAlignment { id } => {
+                if self
+                    .ruler
+                    .as_ref()
+                    .is_some_and(|r| r.client == Some((from, id)))
+                {
+                    self.end_ruler(None, None);
+                }
+            }
             Request::Hello { .. } => {}
             Request::SetSharing { on } => self.set_sharing(on).await,
             Request::UpdateSettings { settings } => self.update_settings(settings).await,
             Request::SetDevice { device } => self.set_device(device).await,
             Request::OpenPeerSettings { fingerprint } => self.open_peer_settings(&fingerprint),
+            Request::DisplayExtension {
+                action,
+                fingerprint,
+                audio,
+            } => match fingerprint.as_deref().map(str::parse).transpose() {
+                Ok(peer) => self.display_action(action, peer, audio),
+                Err(_) => self.display_notice("设备指纹无效", "Invalid device fingerprint"),
+            },
+            Request::SetDisplayPreferences { audio, shortcuts } => {
+                if !self.display_preferences_valid(&self.config.display_plans, shortcuts) {
+                    self.display_notice(
+                        "扩展屏快捷键只能使用不同的数字键",
+                        "Use a different number key for each display shortcut",
+                    );
+                    return;
+                }
+                let mut config = self.config.clone();
+                config.display_audio = audio;
+                config.display_shortcuts = shortcuts;
+                match self.store.save_config(&config) {
+                    Ok(()) => {
+                        self.config = config;
+                        self.dirty = true;
+                    }
+                    Err(e) => self.toast(
+                        Phrase::new("save_failed").arg("message", &e),
+                        format!("保存设置失败：{e}"),
+                    ),
+                }
+            }
+            Request::SetDisplayPlans { plans } => self.save_display_plans(plans),
+            Request::RunDisplayPlan { id } => self.run_display_plan(id),
             Request::Forget { fingerprint } => self.forget(&fingerprint).await,
             Request::PairReply { id, accept } => self.answer(id, accept),
             Request::Connect { fingerprint } => self.connect_to(&fingerprint),
@@ -1155,8 +1322,725 @@ impl<H: Host> Runtime<H> {
         match command {
             Command::SetSharing(on) => self.set_sharing(on).await,
             Command::OpenSettings => self.open_settings(),
+            Command::Display(action) => {
+                self.display_action(action, None, self.config.display_audio)
+            }
+            Command::RunDisplayPlan(id) => self.run_display_plan(id),
+            Command::DisplayShortcutFailed => self.display_notice(
+                "有扩展屏快捷键被系统或其他程序占用",
+                "A display shortcut is already in use",
+            ),
             Command::InstallUpdate => self.updates.install(!self.clients.is_empty()),
             Command::Quit => {}
+        }
+    }
+
+    fn send_display_control(&self, key: DisplaySessionKey, control: DisplayControl) -> bool {
+        let peer = Fingerprint::from_bytes(key.fingerprint);
+        match self.config.role {
+            Role::Server => self
+                .display_senders
+                .get(&peer)
+                .is_some_and(|sender| sender.session == key.input_session && sender.send(control)),
+            Role::Client => self
+                .engine
+                .as_ref()
+                .and_then(|task| task.client.as_ref())
+                .is_some_and(|sender| {
+                    sender
+                        .send(ClientCommand::Display {
+                            peer,
+                            session: key.input_session,
+                            control,
+                        })
+                        .is_ok()
+                }),
+        }
+    }
+
+    fn display_preferences_valid(
+        &self,
+        plans: &[DisplayPlan],
+        shortcuts: ferry_types::DisplayShortcuts,
+    ) -> bool {
+        if plans.len() > 16 || !shortcuts.valid() {
+            return false;
+        }
+        let mut keys: Vec<_> = DisplayAction::ALL
+            .into_iter()
+            .filter_map(|action| shortcuts.key(action))
+            .collect();
+        let mut ids = Vec::new();
+        for plan in plans {
+            if !plan.valid() || ids.contains(&plan.id) {
+                return false;
+            }
+            ids.push(plan.id);
+            if let Some(key) = plan.shortcut {
+                if keys.contains(&key) {
+                    return false;
+                }
+                keys.push(key);
+            }
+        }
+        true
+    }
+
+    fn save_display_plans(&mut self, plans: Vec<DisplayPlan>) {
+        if !self.display_preferences_valid(&plans, self.config.display_shortcuts)
+            || plans.iter().any(|p| {
+                p.peer
+                    .parse::<Fingerprint>()
+                    .ok()
+                    .is_none_or(|peer| !self.peers.contains(&peer))
+            })
+        {
+            self.display_notice(
+                "方案无效：名称不能为空、设备须已配对，快捷键不得重复",
+                "Invalid plan: enter a name, use a paired device and unique shortcuts",
+            );
+            return;
+        }
+        let mut config = self.config.clone();
+        config.display_plans = plans;
+        match self.store.save_config(&config) {
+            Ok(()) => {
+                self.config = config;
+                self.dirty = true;
+            }
+            Err(error) => self.display_notice(
+                &format!("保存方案失败：{error}"),
+                &format!("Could not save plan: {error}"),
+            ),
+        }
+    }
+
+    fn run_display_plan(&mut self, id: u32) {
+        let Some(plan) = self
+            .config
+            .display_plans
+            .iter()
+            .find(|p| p.id == id)
+            .cloned()
+        else {
+            self.display_notice("找不到扩展屏方案", "Display plan was not found");
+            return;
+        };
+        let Ok(peer) = plan.peer.parse::<Fingerprint>() else {
+            return;
+        };
+        let Some(link) = self
+            .links
+            .iter()
+            .find(|l| l.fingerprint == peer && l.display_plans)
+        else {
+            self.display_notice(
+                "请连接支持屏幕方案的设备；两台均需升级",
+                "Connect the selected device and update both PCs to support display plans",
+            );
+            return;
+        };
+        let (source, viewer) = if plan.local_source {
+            (&self.local_screens, &link.screens)
+        } else {
+            (&link.screens, &self.local_screens)
+        };
+        if plan
+            .options
+            .source_screen
+            .is_some_and(|id| !source.iter().any(|s| s.id == id))
+            || plan
+                .options
+                .viewer_screen
+                .is_some_and(|id| !viewer.iter().any(|s| s.id == id))
+        {
+            self.display_notice(
+                "方案选中的屏幕当前不可用，请编辑方案重新选择",
+                "A selected display is unavailable. Edit the plan and select it again",
+            );
+            return;
+        }
+        let action = if plan.local_source == (self.config.role == Role::Server) {
+            DisplayAction::ExtendController
+        } else {
+            DisplayAction::ExtendControlled
+        };
+        self.start_display(action, Some(peer), plan.audio, plan.options, Some(id));
+    }
+
+    fn publish_display_catalog(&mut self) {
+        let screens: Vec<_> = self.local_screens.iter().take(16).copied().collect();
+        let pending: Vec<_> = self
+            .links
+            .iter()
+            .filter(|l| l.display_plans && !l.catalog_sent)
+            .map(|l| (l.fingerprint, l.session, l.peer_side))
+            .collect();
+        for (peer, session, peer_side) in pending {
+            let side = if self.config.role == Role::Server {
+                self.side_of(&peer)
+            } else {
+                peer_side.unwrap_or(Side::Left)
+            };
+            if self.send_display_control(
+                DisplaySessionKey {
+                    fingerprint: *peer.as_bytes(),
+                    input_session: session,
+                    display_session: 0,
+                },
+                DisplayControl::Screens {
+                    screens: screens.clone(),
+                    side,
+                },
+            ) && let Some(link) = self.links.iter_mut().find(|l| l.fingerprint == peer)
+            {
+                link.catalog_sent = true;
+            }
+        }
+    }
+
+    fn display_action(&mut self, action: DisplayAction, peer: Option<Fingerprint>, audio: bool) {
+        if action == DisplayAction::TogglePause {
+            self.toggle_display_pause();
+            return;
+        }
+        self.paused_display = None;
+        let link = peer
+            .and_then(|peer| self.links.iter().find(|l| l.fingerprint == peer))
+            .or_else(|| self.focus_link());
+        let peer_side = if self.config.role == Role::Server {
+            link.map_or(self.config.side, |link| self.side_of(&link.fingerprint))
+        } else {
+            link.and_then(|link| link.peer_side).unwrap_or(Side::Left)
+        };
+        let options = DisplayOptions {
+            side: if action.local_source(self.config.role == Role::Server) == Some(true) {
+                peer_side
+            } else {
+                peer_side.opposite()
+            },
+            ..Default::default()
+        };
+        self.start_display(action, peer, audio, options, None);
+    }
+
+    fn start_display(
+        &mut self,
+        action: DisplayAction,
+        peer: Option<Fingerprint>,
+        audio: bool,
+        options: DisplayOptions,
+        plan: Option<u32>,
+    ) {
+        self.paused_display = None;
+        let Some(local_source) = action.local_source(self.config.role == Role::Server) else {
+            self.stop_display();
+            return;
+        };
+        let link = if let Some(peer) = peer {
+            self.links.iter().find(|link| link.fingerprint == peer)
+        } else {
+            self.focus_link()
+        };
+        let Some(link) =
+            link.filter(|link| link.display_stream && self.peers.contains(&link.fingerprint))
+        else {
+            self.display_notice(
+                "扩展屏需要连接支持此功能的已配对设备",
+                "Connect to a paired device that supports display extension",
+            );
+            return;
+        };
+        let key = DisplaySessionKey {
+            fingerprint: *link.fingerprint.as_bytes(),
+            input_session: link.session,
+            display_session: ring::rand::generate::<[u8; 8]>(&ring::rand::SystemRandom::new())
+                .map(|random| u64::from_le_bytes(random.expose()))
+                .unwrap_or_default(),
+        };
+        if key.display_session == 0 {
+            return;
+        }
+        self.stop_display();
+        self.paused_display = None;
+        self.display = Some(ActiveDisplay::new(
+            DisplaySession::starting(key, local_source, audio, Instant::now()),
+            true,
+        ));
+        if let Some(display) = &mut self.display {
+            display.options = options;
+            display.plan = plan;
+        }
+        info!(?action, ?options, ?plan, "收到扩展屏启动操作");
+        self.sync_display_route();
+        self.dirty = true;
+        self.request_display();
+    }
+
+    fn request_display(&mut self) {
+        // The peer can open the media connection immediately after Start. Delay
+        // Start itself until our old window/monitor has finished destruction.
+        if !self.display_cleanup.is_empty() {
+            return;
+        }
+        let Some(display) = self
+            .display
+            .as_ref()
+            .filter(|d| d.initiator && !d.requested)
+        else {
+            return;
+        };
+        let key = display.session.key;
+        let direction = if display.session.local_source {
+            DisplayDirection::ExtendLocal
+        } else {
+            DisplayDirection::ExtendPeer
+        };
+        let advanced = self
+            .links
+            .iter()
+            .any(|link| link.fingerprint.as_bytes() == &key.fingerprint && link.display_plans);
+        if !display.options.alignment.is_default()
+            && !self.links.iter().any(|l| {
+                l.fingerprint.as_bytes() == &key.fingerprint
+                    && l.display_alignment
+                    && (display.options.alignment.contact.is_none() || l.alignment_ruler)
+            })
+        {
+            self.stop_display();
+            self.display_notice(
+                "请将另一台电脑升级后使用屏幕对齐方案",
+                "Upgrade the other computer to use calibrated display plans.",
+            );
+            return;
+        }
+        let control = if advanced {
+            DisplayControl::StartConfigured {
+                id: key.display_session,
+                direction,
+                audio: display.session.audio,
+                options: display.options,
+            }
+        } else {
+            DisplayControl::Start {
+                id: key.display_session,
+                direction: if display.session.local_source {
+                    DisplayDirection::ExtendLocal
+                } else {
+                    DisplayDirection::ExtendPeer
+                },
+                audio: display.session.audio,
+            }
+        };
+        if self.send_display_control(key, control) {
+            if let Some(display) = &mut self.display {
+                display.requested = true;
+            }
+        } else {
+            self.stop_display();
+            self.display_notice(
+                "扩展屏启动请求未发送，请重试",
+                "Display request could not be sent. Try again.",
+            );
+        }
+    }
+
+    fn stop_display(&mut self) {
+        if let Some(mut display) = self.display.take() {
+            let key = display.session.key;
+            self.send_display_control(
+                key,
+                DisplayControl::Stop {
+                    id: key.display_session,
+                },
+            );
+            self.dirty = true;
+            if let Some(task) = display.task.take() {
+                self.display_cleanup.push(task);
+            }
+            info!(id = key.display_session, "扩展屏结束，等待媒体资源回收");
+        }
+        self.events.set_display_peer(None);
+        self.events.set_extension_peer(None);
+        self.push_live();
+    }
+
+    fn toggle_display_pause(&mut self) {
+        if let Some(display) = &self.display {
+            let saved = PausedDisplay {
+                peer: Fingerprint::from_bytes(display.session.key.fingerprint),
+                local_source: display.session.local_source,
+                audio: display.session.audio,
+                options: display.options,
+                plan: display.plan,
+            };
+            self.stop_display();
+            self.paused_display = Some(saved);
+            self.dirty = true;
+        } else if let Some(saved) = self.paused_display.take() {
+            let action = if saved.local_source == (self.config.role == Role::Server) {
+                DisplayAction::ExtendController
+            } else {
+                DisplayAction::ExtendControlled
+            };
+            self.start_display(
+                action,
+                Some(saved.peer),
+                saved.audio,
+                saved.options,
+                saved.plan,
+            );
+        }
+    }
+
+    fn sync_display_route(&self) {
+        self.events
+            .set_extension_alignment(self.display.as_ref().map_or_else(Default::default, |d| {
+                // DisplayPlan.alignment is stored from the desktop source
+                // toward the physical viewer. Only the viewer needs the
+                // inverse mapping; reversing on both peers made the
+                // calibration change meaning after a direction switch.
+                if d.session.local_source {
+                    d.options.alignment
+                } else {
+                    d.options.alignment.reversed()
+                }
+            }));
+        self.events.set_extension_peer(
+            self.display
+                .as_ref()
+                .map(|d| Fingerprint::from_bytes(d.session.key.fingerprint)),
+        );
+        // The source's native desktop routes the pointer into its virtual
+        // screen. The viewer still needs ordinary edge sharing to reach the
+        // source's physical screen, using the placement selected by live().
+        self.events.set_display_peer(
+            self.display
+                .as_ref()
+                .filter(|display| display.session.local_source)
+                .map(|display| Fingerprint::from_bytes(display.session.key.fingerprint)),
+        );
+        self.push_live();
+    }
+
+    fn display_notice(&mut self, zh: &str, en: &str) {
+        let message = self.lang.pick(zh, en);
+        self.toast(Phrase::new("error").arg("message", message), message);
+    }
+
+    fn on_display_control(&mut self, peer: Fingerprint, session: u64, control: DisplayControl) {
+        let current = self
+            .links
+            .iter()
+            .any(|link| link.fingerprint == peer && link.session == session && link.display_stream);
+        if !current || !self.peers.contains(&peer) {
+            return;
+        }
+        if control.requires_ruler() {
+            self.ruler_control(peer, session, control);
+            return;
+        }
+        if let DisplayControl::Screens { screens, side } = control {
+            if let Some(link) = self
+                .links
+                .iter_mut()
+                .find(|l| l.fingerprint == peer && l.display_plans)
+            {
+                link.screens = screens;
+                link.peer_side = Some(side.opposite());
+                self.dirty = true;
+            }
+            return;
+        }
+        let options = match control {
+            DisplayControl::StartConfigured { options, .. } => options,
+            _ => DisplayOptions::default(),
+        };
+        let key = DisplaySessionKey {
+            fingerprint: *peer.as_bytes(),
+            input_session: session,
+            display_session: control.id(),
+        };
+        match control {
+            DisplayControl::Start {
+                id,
+                direction,
+                audio,
+            }
+            | DisplayControl::StartConfigured {
+                id,
+                direction,
+                audio,
+                ..
+            } => {
+                if let Some(active) = &self.display {
+                    if active.session.key == key {
+                        return;
+                    }
+                    if !active.initiator || self.fingerprint < peer || active.session.is_running() {
+                        self.send_display_control(key, DisplayControl::Unavailable { id });
+                        return;
+                    }
+                    self.stop_display();
+                }
+                self.paused_display = None;
+                self.display = Some(ActiveDisplay::new(
+                    DisplaySession::starting(
+                        key,
+                        direction == DisplayDirection::ExtendPeer,
+                        audio,
+                        Instant::now(),
+                    ),
+                    false,
+                ));
+                if let Some(display) = &mut self.display {
+                    display.options = options;
+                }
+                self.dirty = true;
+                self.sync_display_route();
+                self.acknowledge_display();
+            }
+            DisplayControl::Ready { .. }
+                if self
+                    .display
+                    .as_ref()
+                    .is_some_and(|d| d.session.key == key && d.initiator) =>
+            {
+                if let Some(display) = &mut self.display {
+                    display.ready = true;
+                }
+                self.open_client_display();
+            }
+            DisplayControl::FirstFrame { .. } => {
+                if let Some(display) = &mut self.display
+                    && display.session.local_source
+                    && display.session.first_frame(key, Instant::now())
+                {
+                    self.dirty = true;
+                }
+            }
+            DisplayControl::Stop { .. } | DisplayControl::Unavailable { .. } => {
+                if self.display.as_ref().is_some_and(|d| d.session.key == key) {
+                    self.stop_display();
+                    if matches!(control, DisplayControl::Unavailable { .. }) {
+                        self.display_notice(
+                            "对方暂时无法开启扩展屏",
+                            "The other device cannot extend its display right now",
+                        );
+                    }
+                }
+            }
+            DisplayControl::Ready { .. } | DisplayControl::Screens { .. } => {}
+            DisplayControl::RulerStart { .. }
+            | DisplayControl::RulerPoints { .. }
+            | DisplayControl::RulerStop { .. } => unreachable!("实屏尺消息已分发"),
+        }
+    }
+
+    fn acknowledge_display(&mut self) {
+        if !self.display_cleanup.is_empty() {
+            return;
+        }
+        let Some(display) = &self.display else {
+            return;
+        };
+        if display.initiator || display.ready {
+            return;
+        }
+        let key = display.session.key;
+        if self.send_display_control(
+            key,
+            DisplayControl::Ready {
+                id: key.display_session,
+            },
+        ) {
+            if let Some(display) = &mut self.display {
+                display.ready = true;
+            }
+            self.open_client_display();
+        }
+    }
+
+    fn open_client_display(&mut self) {
+        if !self.display_cleanup.is_empty() {
+            return;
+        }
+        let Some(display) = &mut self.display else {
+            return;
+        };
+        let Some(opener) = self.display_opener.as_ref().filter(|opener| {
+            opener.peer.as_bytes() == &display.session.key.fingerprint
+                && opener.session == display.session.key.input_session
+        }) else {
+            return;
+        };
+        let Some(backend) = self.host.display_backend() else {
+            return;
+        };
+        let session = display.session;
+        if !display.session.claim_media(session.key, Instant::now()) {
+            return;
+        }
+        let opener = opener.clone();
+        let options = display.options;
+        let cancel = display.token();
+        let (first, receiver) = watch::channel(false);
+        display.first_frame = receiver;
+        display.task = Some(tokio::spawn(async move {
+            let stream = opener.open(session.key.display_session).await?;
+            run_media(
+                stream,
+                session,
+                opener.addr,
+                opener.udp,
+                backend,
+                cancel,
+                first,
+                options,
+            )
+            .await
+        }));
+    }
+
+    pub(crate) fn on_display_connection(&mut self, connection: DisplayConnection) {
+        match connection {
+            DisplayConnection::SendControl(sender) => {
+                self.display_senders.insert(sender.peer, sender);
+                self.acknowledge_display();
+            }
+            DisplayConnection::OpenMedia(opener) => {
+                self.display_opener = Some(opener);
+                if self.display.as_ref().is_some_and(|display| display.ready) {
+                    self.open_client_display();
+                }
+            }
+            DisplayConnection::Incoming(incoming) => {
+                let key = DisplaySessionKey {
+                    fingerprint: *incoming.peer.as_bytes(),
+                    input_session: incoming.session,
+                    display_session: incoming.id,
+                };
+                let Some(display) = &mut self.display else {
+                    return;
+                };
+                let Some(backend) = self.host.display_backend() else {
+                    return;
+                };
+                if !display.ready || !display.session.claim_media(key, Instant::now()) {
+                    return;
+                }
+                let session = display.session;
+                let peer_addr = incoming.addr;
+                let udp = incoming.udp;
+                let cancel = display.token();
+                let (first, receiver) = watch::channel(false);
+                display.first_frame = receiver;
+                display.task = Some(tokio::spawn(run_media(
+                    incoming.framed,
+                    session,
+                    peer_addr,
+                    udp,
+                    backend,
+                    cancel,
+                    first,
+                    display.options,
+                )));
+            }
+        }
+    }
+
+    async fn tick_display(&mut self) {
+        self.publish_display_catalog();
+        let mut pending = Vec::new();
+        for task in self.display_cleanup.drain(..) {
+            if task.is_finished() {
+                match task.await {
+                    Ok(Ok(())) => tracing::debug!("扩展屏媒体资源已回收"),
+                    result => warn!(?result, "扩展屏资源回收结束"),
+                }
+            } else {
+                pending.push(task);
+            }
+        }
+        self.display_cleanup = pending;
+        if self.display_cleanup.is_empty() {
+            self.request_display();
+            self.acknowledge_display();
+            if self.display.as_ref().is_some_and(|display| display.ready) {
+                self.open_client_display();
+            }
+        }
+        if self.display.is_none()
+            && self.display_cleanup.is_empty()
+            && Instant::now() >= self.display_recover_at
+        {
+            self.display_recover_at = Instant::now() + Duration::from_secs(3);
+            if let Some(backend) = self.host.display_backend() {
+                if let Ok(screens) = backend.screens()
+                    && screens != self.local_screens
+                {
+                    self.local_screens = screens;
+                    for link in &mut self.links {
+                        link.catalog_sent = false;
+                    }
+                    self.dirty = true;
+                }
+                // A driver or interrupted installer can reactivate its output
+                // after startup. Never leave an owned extension active at idle.
+                self.display_cleanup
+                    .push(tokio::task::spawn_blocking(move || {
+                        backend.recover().map_err(Error::from)
+                    }));
+            }
+        }
+        let Some(display) = &mut self.display else {
+            return;
+        };
+        let key = display.session.key;
+        if display.session.expired(Instant::now()) {
+            self.stop_display();
+            self.display_notice("启动扩展屏超时", "Display extension timed out");
+            return;
+        }
+        if !display.session.local_source
+            && *display.first_frame.borrow()
+            && display.session.first_frame(key, Instant::now())
+        {
+            self.send_display_control(
+                key,
+                DisplayControl::FirstFrame {
+                    id: key.display_session,
+                },
+            );
+            self.dirty = true;
+        }
+        let task = self.display.as_mut().and_then(|display| {
+            if display.task.as_ref().is_some_and(|task| task.is_finished()) {
+                display.task.take()
+            } else {
+                None
+            }
+        });
+        if let Some(task) = task {
+            let result = task.await;
+            self.stop_display();
+            match result {
+                Ok(Ok(())) => {
+                    self.display_notice("扩展屏媒体连接已结束", "The display stream ended")
+                }
+                result => {
+                    let reason = match result {
+                        Ok(Err(error)) => error.to_string(),
+                        Err(error) => error.to_string(),
+                        Ok(Ok(())) => unreachable!(),
+                    };
+                    warn!("扩展屏媒体任务失败：{reason}");
+                    self.toast(
+                        Phrase::new("error").arg("message", &reason),
+                        format!("扩展屏失败：{reason}"),
+                    );
+                }
+            }
         }
     }
 
@@ -1465,10 +2349,12 @@ impl<H: Host> Runtime<H> {
         let hex = fingerprint.to_hex();
         if self.config.layout.iter().any(|p| p.fingerprint == hex)
             || self.config.devices.iter().any(|d| d.fingerprint == hex)
+            || self.config.display_plans.iter().any(|p| p.peer == hex)
         {
             let mut next = self.config.clone();
             next.layout.retain(|p| p.fingerprint != hex);
             next.devices.retain(|d| d.fingerprint != hex);
+            next.display_plans.retain(|p| p.peer != hex);
             match self.store.save_config(&next) {
                 Ok(()) => self.config = next,
                 Err(e) => warn!("保存设置失败：{e}"),
@@ -1612,7 +2498,10 @@ impl<H: Host> Runtime<H> {
     // ── 定时 ─────────────────────────────────────
 
     /// 每 250 毫秒一次：结算每秒的统计、清理过期的配对请求、按时重试、推送状态。
-    pub(crate) fn on_tick(&mut self) {
+    pub(crate) async fn on_tick(&mut self) {
+        self.poll_ruler();
+        self.tick_display().await;
+        self.sync_display_route();
         let outcomes = self.updates.tick(self.config.auto_update);
         if !outcomes.is_empty() {
             self.apply(outcomes);
@@ -1931,6 +2820,15 @@ impl<H: Host> Runtime<H> {
             }),
             lang,
             update: self.updates.ready_version(),
+            display_available: self.focus_link().is_some_and(|link| link.display_stream),
+            display_active: self.display_action_in_progress(),
+            display_paused: self.paused_display.is_some(),
+            display_shortcuts: if self.events.display_stream() {
+                self.config.display_shortcuts
+            } else {
+                Default::default()
+            },
+            display_plans: self.config.display_plans.clone(),
         }
     }
 
@@ -2029,7 +2927,60 @@ impl<H: Host> Runtime<H> {
             },
             activity: self.activity.recent(),
             update: self.updates.info(!server && !self.links.is_empty()),
+            display_extension: self.events.display_stream().then(|| DisplayExtensionInfo {
+                ruler_peers: self
+                    .links
+                    .iter()
+                    .filter(|l| l.alignment_ruler)
+                    .map(|l| l.fingerprint.to_hex())
+                    .collect(),
+                available_peers: self
+                    .links
+                    .iter()
+                    .filter(|link| link.display_stream && self.peers.contains(&link.fingerprint))
+                    .map(|link| link.fingerprint.to_hex())
+                    .collect(),
+                active_peer: self
+                    .display
+                    .as_ref()
+                    .map(|display| {
+                        Fingerprint::from_bytes(display.session.key.fingerprint).to_hex()
+                    })
+                    .or_else(|| self.paused_display.as_ref().map(|d| d.peer.to_hex())),
+                active: self.display_action_in_progress(),
+                running: self
+                    .display
+                    .as_ref()
+                    .is_some_and(|display| display.session.is_running()),
+                paused: self.paused_display.is_some(),
+                audio: self.config.display_audio,
+                shortcuts: self.config.display_shortcuts,
+                plans: self.config.display_plans.clone(),
+                local_screens: self.local_screens.clone(),
+                peer_screens: self
+                    .links
+                    .iter()
+                    .map(|l| (l.fingerprint.to_hex(), l.screens.clone()))
+                    .collect(),
+                configurable_peers: self
+                    .links
+                    .iter()
+                    .filter(|l| l.display_plans)
+                    .map(|l| l.fingerprint.to_hex())
+                    .collect(),
+                active_plan: self.display.as_ref().and_then(|d| d.plan),
+            }),
         }
+    }
+
+    fn display_action_in_progress(&self) -> Option<DisplayAction> {
+        self.display.as_ref().map(|display| {
+            if display.session.local_source == (self.config.role == Role::Server) {
+                DisplayAction::ExtendController
+            } else {
+                DisplayAction::ExtendControlled
+            }
+        })
     }
 }
 

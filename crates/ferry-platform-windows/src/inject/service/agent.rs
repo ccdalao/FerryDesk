@@ -14,9 +14,9 @@ use ferry_trust::InputProofVerifier;
 use ferry_types::{InputEvent, Point};
 use windows::Win32::Foundation::{DuplicateHandle, HANDLE};
 use windows::Win32::System::StationsAndDesktops::{
-    CloseDesktop, DESKTOP_ACCESS_FLAGS, DESKTOP_CREATEWINDOW, DESKTOP_READOBJECTS,
-    DESKTOP_WRITEOBJECTS, GetUserObjectInformationW, HDESK, OpenInputDesktop, SetThreadDesktop,
-    UOI_NAME,
+    CloseDesktop, DESKTOP_ACCESS_FLAGS, DESKTOP_CREATEWINDOW, DESKTOP_JOURNALPLAYBACK,
+    DESKTOP_READOBJECTS, DESKTOP_WRITEOBJECTS, GetUserObjectInformationW, HDESK, OpenInputDesktop,
+    SetThreadDesktop, UOI_NAME,
 };
 use windows::Win32::System::Threading::GetCurrentProcess;
 
@@ -56,6 +56,9 @@ pub fn run_agent(parent_pid: u32, stop_handle: usize) -> Result<()> {
     let pipe = Pipe::create(session, &user)?;
     let mut desks = Desks::default();
     let result = serve(&pipe, &stop, session, &user, &mut desks);
+    if let Err(error) = &result {
+        super::util::report_error("输入代理主循环", error);
+    }
     let cleanup = desks.shutdown();
     result.and(cleanup)
 }
@@ -67,8 +70,13 @@ fn serve(pipe: &Pipe, stop: &Handle, session: u32, user: &str, desks: &mut Desks
         if !pipe.accept()? {
             continue;
         }
-        if let Ok(peer) = security::verify_client(pipe.handle.0, session, user) {
-            let _ = connection(pipe, stop, &peer, session, user, desks);
+        match security::verify_client(pipe.handle.0, session, user) {
+            Ok(peer) => {
+                if let Err(error) = connection(pipe, stop, &peer, session, user, desks) {
+                    super::util::report_error("输入代理会话", &error);
+                }
+            }
+            Err(error) => super::util::report_error("输入代理客户端身份核验", &error),
         }
         desks.hidden = false;
         desks.release()?;
@@ -95,14 +103,14 @@ fn connection(
         {
             return Ok(());
         }
-        if let Some(authority) = &authority {
-            authority.check()?;
-        }
-        let _ = desks.refresh();
         let Some(frame) = pipe.read(Instant::now() + Duration::from_millis(100), Some(stop))?
         else {
             continue;
         };
+        // 在收到请求后立即复查授权，不把等待管道的时间计入撤销响应延迟。
+        if let Some(authority) = &authority {
+            authority.check()?;
+        }
         let request = Request::decode(&frame).map_err(|e| failure(&e.to_string()))?;
         if !lease.accept(
             request.sequence,
@@ -138,7 +146,10 @@ fn connection(
                         .encode(),
                         Instant::now() + Duration::from_millis(100),
                     )?;
-                    return Ok(());
+                    // WriteFile 完成只说明数据进入管道缓冲区，不代表客户端已读到。
+                    // 不能马上 DisconnectNamedPipe，否则“未授权”回复会被丢弃并表现成断管。
+                    // 等客户端读取后关闭，或由现有有限租约回收；不使用可能无限等待的 FlushFileBuffers。
+                    continue;
                 }
             }
             Command::Check => {
@@ -156,7 +167,6 @@ fn connection(
                 let authority = authority
                     .as_mut()
                     .ok_or_else(|| failure("尚未绑定管理员授权的远端"))?;
-                authority.check()?;
                 authority
                     .verifier
                     .accept(&proof, Instant::now())
@@ -280,13 +290,17 @@ impl Drop for Desktop {
 
 fn input_desktop() -> Result<(&'static str, Desktop)> {
     // SAFETY: 仅打开当前输入桌面，不切换用户看到的桌面，不请求创建其他桌面。
+    // SendInput 要求目标桌面的回放访问权；仅有 READ/WRITEOBJECTS 仍会返回 ERROR_ACCESS_DENIED。
     let desktop = Desktop(
         unsafe {
             OpenInputDesktop(
                 Default::default(),
                 false,
                 DESKTOP_ACCESS_FLAGS(
-                    DESKTOP_READOBJECTS.0 | DESKTOP_WRITEOBJECTS.0 | DESKTOP_CREATEWINDOW.0,
+                    DESKTOP_READOBJECTS.0
+                        | DESKTOP_WRITEOBJECTS.0
+                        | DESKTOP_CREATEWINDOW.0
+                        | DESKTOP_JOURNALPLAYBACK.0,
                 ),
             )
         }

@@ -182,6 +182,13 @@ enum Arrival {
         id: u64,
         framed: Box<Framed<ServerStream>>,
     },
+    DisplayStream {
+        id: u64,
+        stream_id: u64,
+        addr: SocketAddr,
+        udp: bool,
+        framed: Box<Framed<ServerStream>>,
+    },
     /// 对方在会话里发来的、要主循环处理的消息（显示器变化、拖动提示）。
     Message { id: u64, message: Message },
     /// 会话结束。`reason` 为 `None` 表示对方正常断开。
@@ -225,6 +232,10 @@ struct Keys {
     clipboard: bool,
     /// 双方是否都支持传文件。
     files: bool,
+    display_stream: bool,
+    display_plans: bool,
+    display_alignment: bool,
+    alignment_ruler: bool,
 }
 
 impl<P> Shared<P> {
@@ -319,8 +330,23 @@ where
         let mut neighbors = Neighbors::new(rect);
         neighbors.set_local_screens(&screens(&local));
         let (arrivals_tx, arrivals) = mpsc::channel(64);
+        let mut caps = capabilities(config.clipboard, config.command_key);
+        caps.set(Capabilities::DISPLAY_STREAM, config.events.display_stream());
+        caps.set(Capabilities::DISPLAY_PLANS, config.events.display_stream());
+        caps.set(
+            Capabilities::DISPLAY_ALIGNMENT,
+            config.events.display_stream(),
+        );
+        caps.set(
+            Capabilities::ALIGNMENT_RULER,
+            config.events.display_stream(),
+        );
+        caps.set(
+            Capabilities::DISPLAY_REALTIME,
+            config.events.display_stream(),
+        );
         let shared = Arc::new(Shared {
-            capabilities: capabilities(config.clipboard, config.command_key),
+            capabilities: caps,
             tls,
             signer,
             fingerprint: identity.fingerprint(),
@@ -395,6 +421,26 @@ where
         match arrival {
             Arrival::Session(new) => self.begin(*new),
             Arrival::Data { id, framed } => self.attach_data(id, *framed),
+            Arrival::DisplayStream {
+                id,
+                stream_id,
+                addr,
+                udp,
+                framed,
+            } => {
+                if let Some(session) = self.sessions.get(&id)
+                    && session.keys.display_stream
+                {
+                    self.config.events.offer_display_stream(
+                        session.peer,
+                        addr,
+                        udp,
+                        id,
+                        stream_id,
+                        *framed,
+                    );
+                }
+            }
             Arrival::Message { id, message } => self.on_message(id, message),
             Arrival::Closed { id, reason } => self.end(id, reason),
         }
@@ -439,6 +485,10 @@ where
             peer,
             clipboard: caps.contains(Capabilities::CLIPBOARD) && settings.clipboard,
             files: caps.contains(Capabilities::FILES),
+            display_stream: caps.contains(Capabilities::DISPLAY_STREAM),
+            display_plans: caps.contains(Capabilities::DISPLAY_PLANS),
+            display_alignment: caps.contains(Capabilities::DISPLAY_ALIGNMENT),
+            alignment_ruler: caps.contains(Capabilities::ALIGNMENT_RULER),
         };
         self.shared.sessions().insert(id, keys);
 
@@ -490,7 +540,17 @@ where
             fingerprint: peer,
             addr,
             platform: Some(platform_of(remote_command)),
+            display_stream: keys.display_stream,
+            display_plans: keys.display_plans,
+            display_alignment: keys.display_alignment,
+            alignment_ruler: keys.alignment_ruler,
+            session: id,
         });
+        if keys.display_stream {
+            self.config
+                .events
+                .offer_display_sender(peer, id, self.sessions[&id].outbox.clone());
+        }
         self.publish_edges();
     }
 
@@ -525,6 +585,22 @@ where
             return;
         };
         match message {
+            Message::DisplayControl(control)
+                if session.keys.display_stream
+                    && (!control.requires_plans() || session.keys.display_plans)
+                    && (!control.requires_alignment() || session.keys.display_alignment)
+                    && (!(control.requires_ruler() || control.requires_contact())
+                        || session.keys.alignment_ruler) =>
+            {
+                self.config.events.emit(Event::DisplayControl {
+                    peer: session.peer,
+                    session: id,
+                    control,
+                });
+            }
+            Message::DisplayControl(_) => {
+                self.end(id, Some("未协商扩展屏能力".into()));
+            }
             Message::Displays(displays) => {
                 session.remote = displays;
                 if let Some(rect) = bounds(&session.remote) {
@@ -594,6 +670,16 @@ where
     // ── 本机输入 ──────────────────────────────
 
     fn on_capture(&mut self, captured: Captured) {
+        if let Some(id) = self.neighbors.active()
+            && self
+                .sessions
+                .get(&id)
+                .is_some_and(|session| Some(session.peer) == self.config.events.display_peer())
+            && let Some((id, transition)) = self.neighbors.leave()
+        {
+            self.perform(id, transition, false);
+            return;
+        }
         // 切换那一刻还在路上的事件，发生时光标在另一边：本机已经处理过它，或者它已被吞掉。
         // 按现在的状态解释它，会拿过时的位置判断边缘、把光标立刻推回去，所以不再使用；
         // 鼠标键照样记录，免得以为某个键一直按着。
@@ -605,18 +691,45 @@ where
                 if !current {
                     return;
                 }
-                let free = !self.pressed.any_button();
+                let extension = self.config.events.extension_peer().and_then(|peer| {
+                    self.sessions
+                        .iter()
+                        .find(|(_, session)| session.peer == peer)
+                        .map(|(&id, _)| id)
+                });
+                let free = !self.pressed.any_button() || (remote.is_some() && remote == extension);
                 if remote.is_none() {
                     self.config.edge.pointer(|p| {
                         p.x = position.x as f32;
                         p.y = position.y as f32;
                         p.here = true;
                     });
-                    if free
-                        && let Some((id, t)) =
-                            self.neighbors
-                                .local_motion(position, dx, dy, Instant::now())
-                    {
+                    let display_peer = self.config.events.display_peer().and_then(|peer| {
+                        self.sessions
+                            .iter()
+                            .find(|(_, session)| session.peer == peer)
+                            .map(|(&id, _)| id)
+                    });
+                    let entered = if let Some(excluded) = display_peer {
+                        self.neighbors.local_motion_excluding(
+                            position,
+                            dx,
+                            dy,
+                            Instant::now(),
+                            excluded,
+                        )
+                    } else if free || extension.is_some() {
+                        self.neighbors.local_motion_filtered(
+                            position,
+                            dx,
+                            dy,
+                            Instant::now(),
+                            if free { None } else { extension },
+                        )
+                    } else {
+                        None
+                    };
+                    if let Some((id, t)) = entered {
                         self.perform(id, t, false);
                     }
                 } else if let Some((id, t)) =
@@ -688,6 +801,14 @@ where
         };
         match transition {
             Transition::Enter { seq, at } => {
+                if self.config.events.display_peer() == Some(peer) {
+                    if let Some((_, local_at)) = self.neighbors.abort()
+                        && let Err(error) = self.capture.release(local_at)
+                    {
+                        warn!(%error, "取消扩展屏对端的普通边缘切换失败");
+                    }
+                    return;
+                }
                 // 先抓取再通知对方：抓取失败就不过去。
                 if let Err(e) = self.capture.grab() {
                     warn!("抓取本机键鼠失败，留在本机：{e}");
@@ -829,6 +950,16 @@ where
             dpi => dpi,
         };
         self.neighbors.set_speed(id, dpi, base);
+        let alignment = if self
+            .sessions
+            .get(&id)
+            .is_some_and(|s| Some(s.peer) == self.config.events.extension_peer())
+        {
+            self.config.events.extension_alignment()
+        } else {
+            settings.alignment
+        };
+        self.neighbors.set_alignment(id, alignment);
         self.neighbors
             .set_delay(id, Duration::from_millis(u64::from(settings.edge_delay_ms)));
     }
@@ -949,12 +1080,17 @@ async fn handshake<P: ConfirmPairing>(
             // 本机是服务端，不等邀请。
             Channel::Invite => Err(RejectReason::UNKNOWN_SESSION),
             // 数据连接和文件连接必须来自会话的同一台设备（证书指纹相同），并带着那个会话号。
-            Channel::Data | Channel::File => {
+            Channel::Data | Channel::File | Channel::DisplayStream => {
                 let keys = shared.sessions().get(&hello.session).copied();
                 let claimed = keys.is_some_and(|k| {
                     k.peer == peer
                         && match hello.channel {
                             Channel::File => k.files,
+                            Channel::DisplayStream => {
+                                k.display_stream
+                                    && peers.contains(&peer)
+                                    && hello.capabilities.contains(Capabilities::DISPLAY_STREAM)
+                            }
                             _ => k.clipboard || k.files,
                         }
                 });
@@ -985,6 +1121,27 @@ async fn handshake<P: ConfirmPairing>(
             let id = welcome.session;
             let framed = Box::new(framed);
             let _ = shared.arrivals.send(Arrival::Data { id, framed }).await;
+            Ok(())
+        }
+        Channel::DisplayStream => {
+            let message = timeout(HANDSHAKE_TIMEOUT, framed.recv())
+                .await
+                .map_err(|_| Error::Timeout("等待扩展屏会话号"))??;
+            let Some(Message::DisplayOpen { id: stream_id }) = message else {
+                return Err(Error::Protocol("媒体连接缺少扩展屏会话号"));
+            };
+            let _ = shared
+                .arrivals
+                .send(Arrival::DisplayStream {
+                    id: welcome.session,
+                    stream_id,
+                    addr,
+                    udp: welcome
+                        .capabilities
+                        .contains(Capabilities::DISPLAY_REALTIME),
+                    framed: Box::new(framed),
+                })
+                .await;
             Ok(())
         }
         Channel::Input => {
@@ -1111,11 +1268,21 @@ async fn run_session(
     tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
     let mut input_reported = Instant::now();
     let mut sent_inputs = 0_u64;
+    let mut pending = None;
     let result: Result<()> = async {
         loop {
             tokio::select! {
-                message = outbox.recv() => match message {
-                    Some(message) => {
+                message = async { match pending.take() { Some(message) => Some(message), None => outbox.recv().await } } => match message {
+                    Some(mut message) => {
+                        if matches!(message, Message::Input(InputEvent::PointerMotion { .. })) {
+                            // 合并发生在签名之前，保留证明序号连续；不跨越点击、按键或控制消息。
+                            // 最高 500Hz 的本机鼠标批次可由两毫秒窗口吸收，不给热点堆入过时轨迹。
+                            tokio::time::sleep(Duration::from_millis(2)).await;
+                            while let Ok(next) = outbox.try_recv() {
+                                if matches!(next, Message::Input(InputEvent::PointerMotion { .. })) { message = next; }
+                                else { pending = Some(next); break; }
+                            }
+                        }
                         if matches!(message, Message::Input(_)) { sent_inputs += 1; }
                         let message = match &mut signed {
                             Some(output) => match SecureAction::from_message(&message) {
@@ -1146,6 +1313,7 @@ async fn run_session(
                         message @ (Message::Displays(_)
                         | Message::DropHint(_)
                         | Message::OpenSettings
+                        | Message::DisplayControl(_)
                         | Message::InputBlocked
                         | Message::AppInfo { .. }),
                     ) => {

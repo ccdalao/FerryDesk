@@ -23,7 +23,7 @@ use tracing::{info, warn};
 /// 正式的更新清单：GitHub 上最新一个正式版里的 `update.json`（签名在 `update.json.minisig`）。
 /// 走下载地址而不是 API，没有每小时 60 次的限制。
 pub const MANIFEST_URL: &str =
-    "https://github.com/icloudza/screen-ferry/releases/latest/download/update.json";
+    "https://github.com/ccdalao/FerryDesk/releases/latest/download/update.json";
 
 /// 启动后多久第一次检查。
 const FIRST_CHECK: Duration = Duration::from_secs(120);

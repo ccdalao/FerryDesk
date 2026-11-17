@@ -5,7 +5,7 @@
 ScreenFerry passes keystrokes, clipboard contents and files between computers, so security reports matter a lot.
 
 **Please don't report vulnerabilities in public issues.** Use
-[Report a vulnerability](https://github.com/icloudza/screen-ferry/security/advisories/new) on the Security tab instead.
+[Report a vulnerability](https://github.com/ccdalao/FerryDesk/security/advisories/new) on the Security tab instead.
 Only the maintainer can see the report.
 
 Especially relevant:
@@ -24,7 +24,7 @@ Only the latest release gets security fixes.
 ScreenFerry 在电脑之间传按键、剪贴板和文件，安全问题很重要。
 
 **请不要在公开的 issue 里报告漏洞。** 到仓库 Security 页点
-[Report a vulnerability](https://github.com/icloudza/screen-ferry/security/advisories/new) 私下报告，只有维护者能看到。
+[Report a vulnerability](https://github.com/ccdalao/FerryDesk/security/advisories/new) 私下报告，只有维护者能看到。
 
 特别关心这些方面：
 

@@ -16,7 +16,7 @@ impl Point {
 }
 
 /// 桌面坐标系中的矩形，包含左上边界，不包含右下边界。
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Rect {
     pub x: i32,
     pub y: i32,

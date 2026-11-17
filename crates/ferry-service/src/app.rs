@@ -10,7 +10,7 @@ pub fn init_output() {
 pub fn run(mode: Mode) -> Result<(), String> {
     if mode == Mode::Help {
         println!(
-            "screenferry-service install | stop | remove\nscreenferry-service authorize <用户SID> <控制端公开授权码>\nscreenferry-service revoke <用户SID> <设备完整指纹>\nWindows 安全输入服务（管理操作需要管理员权限）。授权码必须从控制端经可信渠道核对，普通配对不授予 UAC 权限。"
+            "screenferry-service install | stop | remove\nscreenferry-service authorize <用户SID> <控制端公开授权码>\nscreenferry-service revoke <用户SID> <设备完整指纹>\nscreenferry-service status <用户SID> <设备完整指纹>\nWindows 安全输入服务（管理操作需要管理员权限，status 为只读查询）。授权码必须从控制端经可信渠道核对，普通配对不授予 UAC 权限。"
         );
         return Ok(());
     }
@@ -18,6 +18,19 @@ pub fn run(mode: Mode) -> Result<(), String> {
     {
         use ferry_platform_windows as platform;
         match mode {
+            Mode::Status {
+                user_sid,
+                fingerprint,
+            } => {
+                return platform::is_input_peer_authorized(&user_sid, &fingerprint)
+                    .map(|authorized| {
+                        println!(
+                            "UAC authorization: {}",
+                            if authorized { "authorized" } else { "missing" }
+                        )
+                    })
+                    .map_err(|e| e.to_string());
+            }
             Mode::Run => platform::run_input_service(),
             Mode::Install => platform::install_input_service(),
             Mode::Prepare { directory } => platform::prepare_input_service(&directory),

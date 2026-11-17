@@ -98,6 +98,14 @@ impl AgentProcess {
         .map_err(|e| os("启动会话输入代理", e))?;
         let process = Handle::new(info.hProcess)?;
         let thread = Handle::new(info.hThread)?;
+        // CreateProcessAsUser 之后核验的是子进程实际使用的主令牌，而不是传入的复制令牌。
+        // 对实际令牌设置相同的最小 DACL，普通后台才能用 TOKEN_QUERY 核验 SYSTEM 身份。
+        // 仍不授予用户复制、修改或冒充 SYSTEM 令牌的权限。
+        if let Err(e) = allow_identity_query(process.0, &token_acl) {
+            // SAFETY: 子进程仍挂起，尚未进入 Job；失败必须在这里结束，不能留下孤立进程。
+            let _ = unsafe { TerminateProcess(process.0, 1) };
+            return Err(e);
+        }
         // SAFETY: 子进程仍挂起；失败立即终止，不留没有 Job 监管的 SYSTEM 进程。
         unsafe {
             if let Err(e) = AssignProcessToJobObject(job.0, process.0) {
@@ -125,6 +133,22 @@ impl Drop for AgentProcess {
                 let _ = TerminateJobObject(self.job.0, 1);
             }
         }
+    }
+}
+
+fn allow_identity_query(process: HANDLE, descriptor: &Descriptor) -> Result<()> {
+    let mut token = HANDLE::default();
+    // SAFETY: SYSTEM 服务持有自己刚创建的挂起子进程；只修改其主令牌的 DACL，描述符有效。
+    unsafe {
+        OpenProcessToken(
+            process,
+            TOKEN_QUERY | TOKEN_ACCESS_MASK(0x0004_0000),
+            &mut token,
+        )
+        .map_err(|e| os("打开输入代理实际令牌", e))?;
+        let token = Handle::new(token)?;
+        SetKernelObjectSecurity(token.0, DACL_SECURITY_INFORMATION, descriptor.raw())
+            .map_err(|e| os("设置输入代理身份查询权限", e))
     }
 }
 

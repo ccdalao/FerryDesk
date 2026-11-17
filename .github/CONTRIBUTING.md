@@ -8,7 +8,7 @@ Thanks for helping out. Bug reports, ideas and pull requests are all welcome.
 
 ### Reporting a problem
 
-Open a [bug report](https://github.com/icloudza/screen-ferry/issues/new?template=bug_report.yml) and attach a diagnostics file
+Open a [bug report](https://github.com/ccdalao/FerryDesk/issues/new?template=bug_report.yml) and attach a diagnostics file
 (Log → Diagnostics → Export Diagnostics). It has device names, user names and file names replaced with placeholders,
 and contains no clipboard contents or keys. Security issues go through [SECURITY.md](SECURITY.md), not public issues.
 
@@ -38,7 +38,7 @@ ScreenFerry is dual-licensed under MIT OR Apache-2.0. Unless you say otherwise, 
 
 ### 反馈问题
 
-开一个[问题反馈](https://github.com/icloudza/screen-ferry/issues/new?template=bug_report.yml)，附上诊断文件
+开一个[问题反馈](https://github.com/ccdalao/FerryDesk/issues/new?template=bug_report.yml)，附上诊断文件
 （「日志 → 运行日志」里点“导出诊断文件”）。诊断文件里的设备名、用户名和文件名已经换成代号，不含剪贴板内容和密钥。
 安全问题请按 [SECURITY.md](SECURITY.md) 私下报告，不要发公开的 issue。
 

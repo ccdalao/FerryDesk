@@ -11,6 +11,7 @@ import '../state/app_scope.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
 import '../widgets/controls.dart';
+import '../widgets/alignment_ruler.dart';
 import '../widgets/group.dart';
 import '../widgets/page_scaffold.dart';
 import '../widgets/surface.dart';
@@ -54,6 +55,32 @@ class LayoutPage extends StatelessWidget {
       title: context.l10n.layoutTitle,
       children: [
         const _Stage(),
+        for (final peer in state.arrangement.all)
+          SfGroup(
+            children: [
+              SfRow(
+                title: context.l10n.alignmentTitle,
+                subtitle: peer.displayName,
+                trailing: SmallButton(
+                  label: context.l10n.alignmentAdjust,
+                  onPressed: state.online
+                      ? () async {
+                          final settings = state.deviceSettings(peer.fingerprint);
+                          final alignment = await showAlignmentDialog(
+                            context,
+                            fingerprint: peer.fingerprint,
+                            localName: state.localName,
+                            remoteName: peer.displayName,
+                            side: peer.side ?? ScreenSide.right,
+                            initial: settings.alignment,
+                          );
+                          if (alignment != null) state.setDevice(settings.copyWith(alignment: alignment));
+                        }
+                      : null,
+                ),
+              ),
+            ],
+          ),
         SfGroup(
           children: [
             SfRow(
@@ -71,8 +98,14 @@ class LayoutPage extends StatelessWidget {
             ),
             SfRow(
               title: context.l10n.layoutNoDragSwitch,
-              subtitle: context.l10n.layoutNoDragSwitchHint,
-              trailing: SfSwitch(value: true, label: context.l10n.layoutNoDragSwitch, onChanged: null),
+              subtitle: state.daemon?.displayExtension?.active != null
+                  ? context.l10n.layoutDragExtensionHint
+                  : context.l10n.layoutNoDragSwitchHint,
+              trailing: SfSwitch(
+                value: state.daemon?.displayExtension?.active == null,
+                label: context.l10n.layoutNoDragSwitch,
+                onChanged: null,
+              ),
             ),
             SfRow(
               title: context.l10n.layoutBackHere,

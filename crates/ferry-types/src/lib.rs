@@ -11,6 +11,7 @@ mod clipboard;
 mod config;
 mod device;
 mod display;
+mod display_stream;
 mod geometry;
 mod input;
 mod input_proof;
@@ -23,9 +24,13 @@ mod transfer;
 pub use clipboard::{ClipboardContent, ClipboardFormat};
 pub use config::{Config, Lang, Language, Placement, Role, Theme, uses_command_key};
 pub use device::{
-    DeviceSettings, KeyMapping, ModifierMap, ModifierPreset, ModifierTarget, ScrollSpeed,
+    DeviceSettings, EdgeAlignment, EdgeContact, KeyMapping, ModifierMap, ModifierPreset,
+    ModifierTarget, ScrollSpeed,
 };
 pub use display::{Display, DisplayId};
+pub use display_stream::{
+    DisplayAction, DisplayOptions, DisplayPlan, DisplayPrimary, DisplayScreen, DisplayShortcuts,
+};
 pub use geometry::{Point, Rect, Side};
 pub use input::InputEvent;
 pub use input_proof::InputProof;

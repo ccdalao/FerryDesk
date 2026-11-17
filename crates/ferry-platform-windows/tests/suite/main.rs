@@ -6,5 +6,9 @@
 #![cfg(target_os = "windows")]
 
 mod clipboard;
+mod display_stream;
+mod event_loop;
+mod inject;
 mod keymap;
+mod network;
 mod update;

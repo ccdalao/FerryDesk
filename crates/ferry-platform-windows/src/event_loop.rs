@@ -6,6 +6,15 @@
 //! 后台是 Windows 子系统程序，自己没有控制台，双击或登录时启动不会闪出黑色窗口。
 //! 命令行用法要输出时用 [`attach_console`] 接一个。
 
+pub(crate) mod hotkeys;
+pub(crate) mod latency;
+mod shell;
+
+pub use shell::launch_settings_as_user;
+
+use std::cell::RefCell;
+use std::collections::HashMap;
+
 use ferry_platform::{Dispatcher, Error, EventLoop, MainTask, Result};
 use windows::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Storage::FileSystem::{
@@ -17,19 +26,93 @@ use windows::Win32::System::Console::{
     STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, SetStdHandle,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, RegisterHotKey,
+    UnregisterHotKey,
+};
+use windows::Win32::UI::Shell::{SEE_MASK_NOASYNC, SHELLEXECUTEINFOW, ShellExecuteExW};
 use windows::Win32::UI::WindowsAndMessaging::{
     ASFW_ANY, AllowSetForegroundWindow, CreateWindowExW, DefWindowProcW, DispatchMessageW,
     GetMessageW, HWND_MESSAGE, MSG, PostMessageW, RegisterClassW, TranslateMessage,
-    WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP, WNDCLASSW,
+    WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP, WM_HOTKEY, WNDCLASSW,
 };
 use windows::core::w;
+
+/// 用户主动选择管理员模式，启动成功后由新后台请求旧后台退出。
+pub fn launch_elevated(
+    executable: &std::path::Path,
+    data_dir: Option<&std::path::Path>,
+) -> Result<()> {
+    use windows::core::{HSTRING, PCWSTR};
+    let executable = HSTRING::from(executable.as_os_str());
+    // Windows 文件路径不能含双引号；末尾反斜杠在关闭引号前需转义。
+    let parameters = HSTRING::from(match data_dir {
+        Some(directory) => {
+            let directory = directory.as_os_str().to_string_lossy();
+            let trailing = directory.chars().rev().take_while(|&c| c == '\\').count();
+            format!(
+                "elevate --data-dir \"{directory}{}\"",
+                "\\".repeat(trailing)
+            )
+        }
+        None => "elevate".to_owned(),
+    });
+    let mut info = SHELLEXECUTEINFOW {
+        cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
+        fMask: SEE_MASK_NOASYNC,
+        lpVerb: w!("runas"),
+        lpFile: PCWSTR(executable.as_ptr()),
+        lpParameters: PCWSTR(parameters.as_ptr()),
+        nShow: 1,
+        ..Default::default()
+    };
+    // SAFETY: 所有字符串在同步调用返回前有效；runas 通过 Windows 的 UAC 征得用户同意。
+    unsafe { ShellExecuteExW(&mut info) }.map_err(|e| os("请求管理员后台", e))
+}
 
 /// 投递任务用的消息。`lparam` 是 `Box<MainTask>` 的裸指针。
 const WM_TASK: u32 = WM_APP + 1;
 
+type HotkeyHandler = Box<dyn Fn()>;
+
+thread_local! {
+    // 注册、替换与消息处理都在创建主线程窗口的线程执行。
+    static HOTKEYS: RefCell<HashMap<(isize, i32), HotkeyHandler>> = RefCell::new(HashMap::new());
+}
+
+/// 由应用配置的 Windows 全局快捷键。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WinHotkey {
+    pub ctrl: bool,
+    pub alt: bool,
+    pub shift: bool,
+    pub virtual_key: u16,
+}
+
+impl WinHotkey {
+    fn modifiers(self) -> HOT_KEY_MODIFIERS {
+        let mut flags = MOD_NOREPEAT;
+        if self.ctrl {
+            flags |= MOD_CONTROL;
+        }
+        if self.alt {
+            flags |= MOD_ALT;
+        }
+        if self.shift {
+            flags |= MOD_SHIFT;
+        }
+        flags
+    }
+}
+
 pub struct WinEventLoop {
     hwnd: HWND,
+    _hotkey_hook: windows::Win32::UI::WindowsAndMessaging::HHOOK,
 }
+
+/// 同一事件循环上的快捷键注册器。只在主线程使用。
+#[derive(Clone, Copy)]
+pub struct WinHotkeys(HWND);
 
 impl WinEventLoop {
     /// 只能在主线程上调用：窗口属于创建它的线程，任务也在这个线程上执行。
@@ -61,7 +144,61 @@ impl WinEventLoop {
             )
             .map_err(|e| os("CreateWindowExW", e))?
         };
-        Ok(Self { hwnd })
+        let hook = hotkeys::install().map_err(|e| os("SetWindowsHookExW(shortcuts)", e))?;
+        Ok(Self {
+            hwnd,
+            _hotkey_hook: hook,
+        })
+    }
+
+    pub fn hotkeys(&self) -> WinHotkeys {
+        WinHotkeys(self.hwnd)
+    }
+}
+
+impl WinHotkeys {
+    /// 在主线程注册一个快捷键。若系统已有相同快捷键，返回错误。
+    pub fn register_hotkey(
+        &self,
+        id: i32,
+        key: WinHotkey,
+        handler: impl Fn() + 'static,
+    ) -> Result<()> {
+        let slot = (self.0.0 as isize, id);
+        HOTKEYS.with(|hotkeys| {
+            let mut hotkeys = hotkeys.borrow_mut();
+            if hotkeys.contains_key(&slot) {
+                return Err(Error::Failed("快捷键编号已注册".into()));
+            }
+            // SAFETY: 主线程拥有 hwnd，键和修饰键都是传值参数。
+            unsafe {
+                RegisterHotKey(
+                    Some(self.0),
+                    id,
+                    key.modifiers(),
+                    u32::from(key.virtual_key),
+                )
+            }
+            .map_err(|e| os("RegisterHotKey", e))?;
+            hotkeys.insert(slot, Box::new(handler));
+            hotkeys::register(self.0, id, key);
+            Ok(())
+        })
+    }
+
+    pub fn unregister_hotkey(&self, id: i32) -> Result<()> {
+        let slot = (self.0.0 as isize, id);
+        HOTKEYS.with(|hotkeys| {
+            let mut hotkeys = hotkeys.borrow_mut();
+            if hotkeys.contains_key(&slot) {
+                // SAFETY: 主线程拥有 hwnd，登记编号由本窗口分配。
+                unsafe { UnregisterHotKey(Some(self.0), id) }
+                    .map_err(|e| os("UnregisterHotKey", e))?;
+                hotkeys.remove(&slot);
+                hotkeys::unregister(self.0, id);
+            }
+            Ok(())
+        })
     }
 }
 
@@ -75,6 +212,18 @@ unsafe extern "system" fn window_proc(
         // SAFETY: 这个消息只由 dispatcher 投递，lparam 是 Box::into_raw 得到的指针，只取回一次。
         let task = unsafe { Box::from_raw(lparam.0 as *mut MainTask) };
         task();
+        return LRESULT(0);
+    }
+    if msg == WM_HOTKEY
+        && HOTKEYS.with(|hotkeys| {
+            let handlers = hotkeys.borrow();
+            let Some(handler) = handlers.get(&(hwnd.0 as isize, wparam.0 as i32)) else {
+                return false;
+            };
+            handler();
+            true
+        })
+    {
         return LRESULT(0);
     }
     // SAFETY: 其余消息交给系统默认处理。

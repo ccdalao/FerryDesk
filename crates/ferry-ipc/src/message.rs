@@ -5,7 +5,9 @@
 
 use std::collections::BTreeMap;
 
-use ferry_types::{DeviceSettings, Language, Placement, Role, Side, Theme};
+use ferry_types::{
+    DeviceSettings, DisplayAction, DisplayShortcuts, Language, Placement, Role, Side, Theme,
+};
 use serde::{Deserialize, Serialize};
 
 /// 协议版本。不兼容的改动才递增。
@@ -18,25 +20,60 @@ pub const MAX_LINE: usize = 1 << 20;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Request {
+    BeginAlignment {
+        id: u64,
+        fingerprint: String,
+        #[serde(default)]
+        local_screen: Option<u32>,
+        #[serde(default)]
+        peer_screen: Option<u32>,
+        #[serde(default)]
+        horizontal: bool,
+        #[serde(default)]
+        reversed: bool,
+    },
+    CancelAlignment {
+        id: u64,
+    },
     /// 第一条消息：令牌与界面使用的协议版本。
-    Hello { token: String, version: u32 },
+    Hello {
+        token: String,
+        version: u32,
+    },
     /// 暂停或继续共享。
-    SetSharing { on: bool },
+    SetSharing {
+        on: bool,
+    },
     /// 修改设置，只含要改的字段。
-    UpdateSettings { settings: SettingsPatch },
+    UpdateSettings {
+        settings: SettingsPatch,
+    },
     /// 换上一台设备（`device.fingerprint`）的单独设置，整份替换。全是缺省值即恢复默认。
-    SetDevice { device: DeviceSettings },
+    SetDevice {
+        device: DeviceSettings,
+    },
     /// 删除一台已配对的设备，下次连接需要重新配对。
-    Forget { fingerprint: String },
+    Forget {
+        fingerprint: String,
+    },
     /// 回答配对请求。
-    PairReply { id: u64, accept: bool },
+    PairReply {
+        id: u64,
+        accept: bool,
+    },
     /// 客户端：连接局域网里发现的一台服务端，未配对时先配对。只连这一次，不会把地址写死。
-    Connect { fingerprint: String },
+    Connect {
+        fingerprint: String,
+    },
     /// 客户端：按地址连接一台服务端（IP、IP:端口、电脑名或电脑名:端口，不写端口用 24810），
     /// 未配对时先配对。结果以 `dialed` 告知。
-    ConnectAddress { address: String },
+    ConnectAddress {
+        address: String,
+    },
     /// 服务端：邀请这个地址上的电脑（被控制的一方）连过来，端口不写用 24811。结果以 `dialed` 告知。
-    Invite { address: String },
+    Invite {
+        address: String,
+    },
     /// 打开系统设置中授予键鼠控制权限的页面。
     OpenPermissionSettings,
     /// 清空日志。
@@ -45,7 +82,26 @@ pub enum Request {
     OpenSettings,
     /// 请连着的那台设备 `fingerprint` 打开它的设置界面，并翻到本机的设置页。
     /// 本机被它控制时，滚动、按键等设置要在它那边改。结果以 `toast` 告知。
-    OpenPeerSettings { fingerprint: String },
+    OpenPeerSettings {
+        fingerprint: String,
+    },
+    DisplayExtension {
+        action: DisplayAction,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fingerprint: Option<String>,
+        #[serde(default)]
+        audio: bool,
+    },
+    SetDisplayPreferences {
+        audio: bool,
+        shortcuts: DisplayShortcuts,
+    },
+    SetDisplayPlans {
+        plans: Vec<ferry_types::DisplayPlan>,
+    },
+    RunDisplayPlan {
+        id: u32,
+    },
     /// 把这些文件和文件夹（本机的绝对路径）发给连着的设备 `to`（证书指纹）。
     /// 不指定时发给光标最近去过的那台，只连着一台时就是它。结果以 `toast` 和日志告知。
     SendFiles {
@@ -71,7 +127,9 @@ pub enum Request {
     /// 打开运行日志所在的文件夹。
     OpenLogsFolder,
     /// 打开或关闭详细记录（运行日志多记调试信息）。重启后总是关着。
-    SetVerbose { on: bool },
+    SetVerbose {
+        on: bool,
+    },
     /// 马上检查更新，结果体现在 `state.update` 里。
     CheckUpdate,
     /// 下载新版本（关掉了自动检查时手动点的）。
@@ -81,13 +139,20 @@ pub enum Request {
     /// 安装已下载好的新版本：后台会退出，新版本启动后界面重新打开。
     InstallUpdate,
     /// 仪表盘横幅上点了“稍后”：到下一个版本前不再提示。
-    DismissUpdate { version: String },
+    DismissUpdate {
+        version: String,
+    },
 }
 
 /// 后台 → 界面。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Notice {
+    AlignmentResult {
+        id: u64,
+        alignment: Option<ferry_types::EdgeAlignment>,
+        error: Option<String>,
+    },
     /// 回应 `Hello`，之后立即发送 `History` 和 `State`。
     Welcome { version: u32 },
     /// 完整的状态快照。有变化时推送，最多每秒 4 次。
@@ -193,6 +258,32 @@ pub struct State {
     /// 版本更新。旧版后台没有这个字段。
     #[serde(default)]
     pub update: UpdateInfo,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_extension: Option<DisplayExtensionInfo>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayExtensionInfo {
+    #[serde(default)]
+    pub ruler_peers: Vec<String>,
+    pub available_peers: Vec<String>,
+    pub active_peer: Option<String>,
+    pub active: Option<DisplayAction>,
+    pub running: bool,
+    #[serde(default)]
+    pub paused: bool,
+    pub audio: bool,
+    pub shortcuts: DisplayShortcuts,
+    #[serde(default)]
+    pub plans: Vec<ferry_types::DisplayPlan>,
+    #[serde(default)]
+    pub local_screens: Vec<ferry_types::DisplayScreen>,
+    #[serde(default)]
+    pub peer_screens: BTreeMap<String, Vec<ferry_types::DisplayScreen>>,
+    #[serde(default)]
+    pub configurable_peers: Vec<String>,
+    #[serde(default)]
+    pub active_plan: Option<u32>,
 }
 
 /// 版本更新（ADR 0014）。

@@ -35,6 +35,7 @@ void main() {
     final decoded = [for (final n in notices) Notice.fromJson(n)];
     expect(decoded, everyElement(isNotNull));
     expect(decoded.map((n) => n.runtimeType).toSet(), {
+      AlignmentResultNotice,
       WelcomeNotice,
       StateNotice,
       HistoryNotice,
@@ -221,6 +222,22 @@ void main() {
       const ClearLogRequest(),
       const OpenSettingsRequest(),
       const OpenPeerSettingsRequest(pc),
+      const DisplayExtensionRequest(DisplayAction.extendController, fingerprint: pc, audio: true),
+      const SetDisplayPreferencesRequest(true, {DisplayAction.extendController: 49, DisplayAction.stop: 48}),
+      const SetDisplayPlansRequest([
+        DisplayPlan(
+          id: 11,
+          name: '工作副屏',
+          peer: pc,
+          localSource: false,
+          sourceScreen: 2,
+          viewerScreen: 1,
+          side: ScreenSide.left,
+          primary: DisplayPrimary.viewer,
+          shortcut: 50,
+        ),
+      ]),
+      const RunDisplayPlanRequest(11),
       const SendFilesRequest(['/Users/me/Desktop/证书.p12', '/Users/me/Desktop/设计稿']),
       const SendFilesRequest(['/Users/me/Desktop/证书.p12'], to: pc),
       const QuitRequest(),
@@ -235,6 +252,8 @@ void main() {
       const DownloadUpdateRequest(),
       const CancelUpdateRequest(),
       const InstallUpdateRequest(),
+      const BeginAlignmentRequest(9, pc, localScreen: 1, peerScreen: 2),
+      const CancelAlignmentRequest(9),
       const DismissUpdateRequest('0.2.0'),
     ];
     expect(ours, hasLength(requests.length));

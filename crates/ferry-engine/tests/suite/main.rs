@@ -4,6 +4,7 @@
 
 mod client;
 mod clipboard;
+mod display_stream;
 mod edge_drop;
 mod events;
 mod files;

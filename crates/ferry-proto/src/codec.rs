@@ -31,7 +31,7 @@ impl Codec {
     pub const fn max_payload(self) -> usize {
         match self.channel {
             Channel::Input | Channel::Pair | Channel::Invite => MAX_INPUT_PAYLOAD,
-            Channel::Data | Channel::File => MAX_DATA_PAYLOAD,
+            Channel::Data | Channel::File | Channel::DisplayStream => MAX_DATA_PAYLOAD,
         }
     }
 

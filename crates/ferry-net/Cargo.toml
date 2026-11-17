@@ -10,6 +10,8 @@ publish.workspace = true
 test = false
 
 [dependencies]
+ferry-platform.workspace = true
+tracing.workspace = true
 ferry-proto.workspace = true
 ferry-trust.workspace = true
 ferry-types.workspace = true

@@ -3,6 +3,30 @@ use std::time::Instant;
 use ferry_core::{EdgeSwitch, Side, Transition};
 use ferry_types::{Point, Rect};
 
+#[test]
+fn calibrated_physical_seam_has_no_jump_and_blocks_the_non_touching_portion() {
+    let mut s = switch(Side::Right);
+    s.set_alignment(ferry_types::EdgeAlignment {
+        offset: 200,
+        span: 600,
+        contact: None,
+    });
+    assert_eq!(
+        s.local_motion(Point::new(999, 100), 5, 0, Instant::now()),
+        None
+    );
+    let at = enter(&mut s, Point::new(999, 400), 5, 0);
+    assert_eq!(at.y, 540);
+    let back = s.remote_motion(-100, 0, true, Instant::now()).unwrap();
+    assert!(matches!(
+        back,
+        Transition::Leave {
+            local_at: Point { y: 400, .. },
+            ..
+        }
+    ));
+}
+
 /// 本机 1000×800，远端 1920×1080；远端缩放 100%，位移一比一。
 fn switch(side: Side) -> EdgeSwitch {
     EdgeSwitch::new(

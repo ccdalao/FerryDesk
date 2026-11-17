@@ -26,3 +26,6 @@ pub use inject::MockInject;
 pub use overlay::MockOverlay;
 pub use permission::MockPermissions;
 pub use update::MockUpdater;
+
+mod network;
+pub use network::MockNetworkPriority;

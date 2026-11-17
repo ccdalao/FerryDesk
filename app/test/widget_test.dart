@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screenferry_settings/app.dart';
+import 'package:screenferry_settings/pages/about_page.dart';
 import 'package:screenferry_settings/shell/bottom_nav.dart';
 import 'package:screenferry_settings/shell/sidebar.dart';
 import 'package:screenferry_settings/state/app_state.dart';
@@ -103,6 +104,120 @@ Color headerColor(WidgetTester tester, String title) {
 }
 
 void main() {
+  testWidgets('副屏方案选择桌面来源、主屏、位置和快捷键并保存应用', (tester) async {
+    final backend = DemoBackend(animate: false, platform: 'windows');
+    final state = await launch(tester, const Size(1160, 900), backend: backend);
+    final old = state.daemon!;
+    final peer = state.peers.first;
+    void emit(DisplayExtensionInfo extension) => backend.emit(
+      StateNotice(
+        DaemonState(
+          local: old.local,
+          sharing: old.sharing,
+          problem: old.problem,
+          link: old.link,
+          clipboard: old.clipboard,
+          peers: old.peers,
+          found: old.found,
+          settings: old.settings,
+          activity: old.activity,
+          displayExtension: extension,
+        ),
+      ),
+    );
+    DisplayExtensionInfo info([List<DisplayPlan> plans = const []]) => DisplayExtensionInfo(
+      [peer.fingerprint],
+      null,
+      null,
+      false,
+      false,
+      const {},
+      plans: plans,
+      localScreens: const [DisplayScreen(1, 1920, 1080, true)],
+      peerScreens: {
+        peer.fingerprint: const [DisplayScreen(2, 1920, 1080, true)],
+      },
+      configurablePeers: [peer.fingerprint],
+    );
+    emit(info());
+    state.openDevice(peer.fingerprint);
+    await settle(tester);
+    await tapInView(tester, find.widgetWithText(SmallButton, '新建方案'));
+    await tester.enterText(find.byKey(const ValueKey('display-plan-name')), '办公拓展');
+    await tester.tap(find.byKey(const ValueKey('display-plan-desktop')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(peer.displayName).last);
+    await tester.pumpAndSettle();
+    final primary = find.byKey(const ValueKey('display-plan-primary'));
+    await tester.ensureVisible(primary);
+    await tester.tap(primary);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('另一台电脑显示的扩展屏为主屏').last);
+    await tester.pumpAndSettle();
+    final side = find.byType(DropdownButtonFormField<ScreenSide>);
+    await tester.ensureVisible(side);
+    await tester.tap(side);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('上方').last);
+    await tester.pumpAndSettle();
+    final shortcut = find.byType(DropdownButtonFormField<int>).last;
+    await tester.ensureVisible(shortcut);
+    await tester.tap(shortcut);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ctrl+Alt+Shift+2').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('display-plan-save')));
+    await settle(tester);
+    final plan = backend.sent.whereType<SetDisplayPlansRequest>().last.plans.single;
+    expect(plan.name, '办公拓展');
+    expect(plan.localSource, isFalse);
+    expect(plan.primary, DisplayPrimary.viewer);
+    expect(plan.side, ScreenSide.top);
+    expect(plan.shortcut, 50);
+    emit(info([plan]));
+    await settle(tester);
+    await tapInView(tester, find.widgetWithText(SmallButton, '应用方案'));
+    expect(backend.sent.whereType<RunDisplayPlanRequest>().last.id, plan.id);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('扩展屏的两个方向和取消发送给现有后台', (tester) async {
+    final backend = DemoBackend(animate: false, platform: 'windows');
+    final state = await launch(tester, const Size(1160, 780), backend: backend);
+    final old = state.daemon!;
+    final peer = state.peers.first.fingerprint;
+    final displayState = StateNotice(
+      DaemonState(
+        local: old.local,
+        sharing: old.sharing,
+        problem: old.problem,
+        link: old.link,
+        clipboard: old.clipboard,
+        peers: old.peers,
+        found: old.found,
+        settings: old.settings,
+        activity: old.activity,
+        displayExtension: DisplayExtensionInfo([peer], peer, null, false, false, const {}),
+      ),
+    );
+    backend.emit(displayState);
+    state.openDevice(peer);
+    await settle(tester);
+    expect(find.text('扩展屏'), findsWidgets);
+    final start = find.widgetWithText(SmallButton, '开启');
+    await tapInView(tester, start.first);
+    expect(backend.sent.whereType<DisplayExtensionRequest>().last.action, DisplayAction.extendController);
+    backend.emit(displayState);
+    await settle(tester);
+    await tapInView(tester, start.last);
+    expect(backend.sent.whereType<DisplayExtensionRequest>().last.action, DisplayAction.extendControlled);
+    backend.emit(displayState);
+    await settle(tester);
+    await tapInView(tester, find.widgetWithText(SmallButton, '取消副屏拓展'));
+    expect(backend.sent.whereType<DisplayExtensionRequest>().last.action, DisplayAction.stop);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final (name, size) in [
     ('默认窗口', const Size(1160, 780)),
     ('最小窗口', const Size(880, 600)),
@@ -359,7 +474,7 @@ void main() {
   testWidgets('缺少权限时显示提示条，按钮请后台打开系统设置', (tester) async {
     final backend = DemoBackend(
       animate: false,
-      problem: const Problem(kind: ProblemKind.permission, message: '需要在“隐私与安全性”中允许 ScreenFerry 控制电脑'),
+      problem: const Problem(kind: ProblemKind.permission, message: '需要在“隐私与安全性”中允许 FerryDesk 控制电脑'),
     );
     await launch(tester, const Size(1160, 780), backend: backend);
     expect(find.text('需要键鼠控制权限'), findsOneWidget);
@@ -410,7 +525,7 @@ void main() {
   testWidgets('后台没有运行时显示占位页，侧栏仍在', (tester) async {
     final state = await launch(tester, const Size(1160, 780), backend: DemoBackend(animate: false, startOnline: false));
     expect(find.text('后台没有运行'), findsOneWidget);
-    expect(find.text('请先启动 ScreenFerry，连上后会自动显示。'), findsOneWidget);
+    expect(find.text('请先启动 FerryDesk，连上后会自动显示。'), findsOneWidget);
     expect(navItem('设备'), findsOneWidget);
     expect(find.text('往返延迟'), findsNothing);
     expect(state.online, isFalse);
@@ -545,7 +660,10 @@ void main() {
       final state = await launch(tester, size);
       final (office, study, notebook) = await openLayout(tester, state);
       for (final name in ['办公室 PC', '书房 PC', '家里的笔记本']) {
-        expect(find.text(name), findsOneWidget);
+        expect(
+          find.descendant(of: find.byKey(ValueKey('screen-${fingerprintOf(state, name)}')), matching: find.text(name)),
+          findsOneWidget,
+        );
       }
       final local = screenRect(tester, 'local');
       final (a, b, n) = (screenRect(tester, office), screenRect(tester, study), screenRect(tester, notebook));
@@ -830,7 +948,10 @@ void main() {
 
       state.go(SfPage.layout);
       await settle(tester);
-      expect(find.text('Windows 台式机'), findsOneWidget);
+      expect(
+        find.descendant(of: find.byKey(ValueKey('screen-${linked.fingerprint}')), matching: find.text('Windows 台式机')),
+        findsOneWidget,
+      );
     });
 
     testWidgets('在设备页给本机改名', (tester) async {
@@ -1043,12 +1164,27 @@ void main() {
   });
 
   group('关于', () {
+    testWidgets('项目主页、许可和致谢指向独立仓库', (tester) async {
+      final opened = <String>[];
+      final state = await launch(tester, const Size(1160, 780), opened: opened);
+      state.go(SfPage.about);
+      await settle(tester);
+      for (final title in ['项目主页', '许可证', '开源致谢']) {
+        await tapInView(tester, find.text(title));
+      }
+      expect(opened, [
+        'https://github.com/ccdalao/FerryDesk',
+        'https://github.com/ccdalao/FerryDesk/blob/main/LICENSE-GPL',
+        'https://github.com/ccdalao/FerryDesk/blob/main/docs/credits.md',
+      ]);
+    });
+
     testWidgets('页头显示彩色的应用图标', (tester) async {
       final state = await launch(tester, const Size(1160, 780));
       state.go(SfPage.about);
       await settle(tester);
-      expect(find.byType(AppIconMark), findsOneWidget);
-      expect(find.bySemanticsLabel('ScreenFerry'), findsWidgets);
+      expect(find.descendant(of: find.byType(AboutPage), matching: find.byType(AppIconMark)), findsOneWidget);
+      expect(find.bySemanticsLabel('FerryDesk'), findsWidgets);
     });
 
     testWidgets('点作者主页用浏览器打开，不再列出加密和协议版本', (tester) async {
@@ -1059,9 +1195,9 @@ void main() {
       expect(find.text('加密与配对'), findsNothing);
       expect(find.text('协议版本'), findsNothing);
 
-      await tester.tap(find.text('作者主页'));
+      await tester.tap(find.text('项目维护者'));
       await settle(tester);
-      expect(opened, ['https://github.com/icloudza']);
+      expect(opened, ['https://github.com/ccdalao']);
       expect(find.text('打不开浏览器，链接已复制'), findsNothing);
     });
 
@@ -1076,9 +1212,9 @@ void main() {
       state.go(SfPage.about);
       await settle(tester);
 
-      await tester.tap(find.text('作者主页'));
+      await tester.tap(find.text('项目维护者'));
       await settle(tester);
-      expect(copied, ['https://github.com/icloudza']);
+      expect(copied, ['https://github.com/ccdalao']);
       expect(find.text('打不开浏览器，链接已复制'), findsOneWidget);
     });
   });
@@ -1146,7 +1282,7 @@ void main() {
       expect(backend.sent.whereType<RevealDiagnosticsRequest>(), hasLength(1));
 
       await tapInView(tester, find.text('复制摘要'));
-      expect(copied.single, startsWith('ScreenFerry 诊断摘要'));
+      expect(copied.single, startsWith('FerryDesk 诊断摘要'));
       expect(find.text('已复制摘要：版本、系统和最近 200 行，可以直接贴进问题描述'), findsOneWidget);
 
       await tapInView(tester, find.text('打开日志文件夹'));
@@ -1157,14 +1293,14 @@ void main() {
     testWidgets('打开详细记录，提问题时带上版本和系统', (tester) async {
       final opened = <String>[];
       final (_, backend) = await openRunLog(tester, opened: opened);
-      expect(find.textContaining('重启 ScreenFerry 后自动关闭'), findsOneWidget);
+      expect(find.textContaining('重启 FerryDesk 后自动关闭'), findsOneWidget);
       await tapInView(tester, switchOf('详细记录'));
       expect(backend.sent.whereType<SetVerboseRequest>().single.on, isTrue);
       expect(find.textContaining('刚刚打开'), findsOneWidget);
 
       await tapInView(tester, find.text('去 GitHub 提问题'));
       final url = Uri.parse(opened.single);
-      expect(url.path, '/icloudza/screen-ferry/issues/new');
+      expect(url.path, '/ccdalao/FerryDesk/issues/new');
       expect(url.queryParameters['template'], 'bug_report.yml');
       expect(url.queryParameters['version'], '0.1.0');
       expect(url.queryParameters['system'], 'macOS 15.6 · arm64');
@@ -1315,7 +1451,7 @@ void main() {
       expect(find.text('发现新版本 0.2.0，要手动安装'), findsOneWidget);
       await tester.tap(find.text('打开下载页面'));
       await settle(tester);
-      expect(opened, ['https://github.com/icloudza/screen-ferry/releases/latest']);
+      expect(opened, ['https://github.com/ccdalao/FerryDesk/releases/latest']);
     });
 
     testWidgets('出错时说明原因', (tester) async {

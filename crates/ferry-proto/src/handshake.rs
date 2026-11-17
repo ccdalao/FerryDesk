@@ -32,6 +32,8 @@ pub enum Channel {
     /// 邀请：服务端请客户端连过来。客户端在单独的端口上等它；`Hello` 的 `session` 填服务端监听的端口，
     /// 客户端回 `Welcome`（或者正连着别的服务端时回 `Reject(BUSY)`）后关闭，再照常连接服务端。
     Invite,
+    /// 屏幕扩展会话的音视频。单独收发，避免媒体数据阻塞键鼠。
+    DisplayStream,
 }
 
 impl fmt::Display for Channel {
@@ -42,6 +44,7 @@ impl fmt::Display for Channel {
             Self::Pair => "配对",
             Self::File => "文件",
             Self::Invite => "邀请",
+            Self::DisplayStream => "扩展屏媒体",
         })
     }
 }
@@ -71,6 +74,18 @@ bitflags! {
         const SECURE_INPUT = 1 << 7;
         /// 被控端收不了键鼠时请控制端收回光标（`InputBlocked` 消息），不必断开连接。
         const INPUT_BLOCKED = 1 << 8;
+        /// 支持通过现有设备配对建立扩展屏会话。
+        const DISPLAY_STREAM = 1 << 9;
+        /// 扩展屏方案：屏幕清单、位置和主显示器选择。
+        const DISPLAY_PLANS = 1 << 10;
+        /// 扩展屏使用 Apollo/Moonlight 兼容的 UDP/FEC 媒体通道。
+        const DISPLAY_UDP = 1 << 11;
+        /// Apollo RTP / Moonlight queue, authenticated encrypted datagrams and feedback.
+        const DISPLAY_REALTIME = 1 << 12;
+        /// 扩展屏物理接缝刻度校准（StartConfigured kind 7）。
+        const DISPLAY_ALIGNMENT = 1 << 13;
+        /// 两端实屏尺交互取点。
+        const ALIGNMENT_RULER = 1 << 14;
     }
 }
 
@@ -199,6 +214,7 @@ impl Body for Channel {
             Self::Pair => 3,
             Self::File => 4,
             Self::Invite => 5,
+            Self::DisplayStream => 6,
         });
         Ok(())
     }
@@ -210,6 +226,7 @@ impl Body for Channel {
             3 => Ok(Self::Pair),
             4 => Ok(Self::File),
             5 => Ok(Self::Invite),
+            6 => Ok(Self::DisplayStream),
             _ => Err(DecodeError::InvalidValue("连接类型")),
         }
     }

@@ -283,6 +283,7 @@ class _DisplayPlanDialogState extends State<DisplayPlanDialog> {
                 value: _audio,
                 onChanged: (value) => setState(() => _audio = value),
               ),
+              Text(strings.displayAudioHint, style: Theme.of(context).textTheme.bodySmall),
               Text(strings.displayPlanHint, style: Theme.of(context).textTheme.bodySmall),
             ],
           ),

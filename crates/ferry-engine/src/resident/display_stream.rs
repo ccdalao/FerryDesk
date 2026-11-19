@@ -741,7 +741,16 @@ async fn run_viewer<S: AsyncRead + AsyncWrite + Unpin>(
                 if stats.lost != last_lost {
                     recovery.lost();
                     last_lost = stats.lost;
-                    udp_queue.lock().expect("media queue poisoned").clear();
+                    // A lost video packet invalidates the following video
+                    // reference frame, but it must not erase already received
+                    // audio. Keeping audio prevents a network hiccup from
+                    // turning into a long audible hole.
+                    udp_queue
+                        .lock()
+                        .expect("media queue poisoned")
+                        .retain(|work| {
+                            matches!(work, ViewerWork::Frame(_, frame) if frame.track == MediaTrack::Audio)
+                        });
                 }
                 if let Some(frame) = frame {
                     received_frame = true;
@@ -750,12 +759,34 @@ async fn run_viewer<S: AsyncRead + AsyncWrite + Unpin>(
                         return Err(Error::Protocol("未协商扩展屏声音"));
                     }
                     let mut queue = udp_queue.lock().expect("media queue poisoned");
-                    if queue.len() >= 2 {
-                        queue.clear();
-                        recovery.lost();
-                        local_lost = local_lost.saturating_add(1);
-                    }
-                    if frame.track == MediaTrack::Audio || recovery.accept(&frame.bytes) {
+                    if frame.track == MediaTrack::Audio {
+                        // Audio is independent of H.264 recovery. Put it at
+                        // the front and evict video first when the bounded
+                        // queue is full.
+                        while queue.len() >= 6 {
+                            if let Some(index) = queue.iter().rposition(|work| {
+                                matches!(work, ViewerWork::Frame(_, frame) if frame.track == MediaTrack::Video)
+                            }) {
+                                queue.remove(index);
+                            } else {
+                                queue.pop_back();
+                            }
+                        }
+                        queue.push_front(ViewerWork::Frame(std::time::Instant::now(), frame));
+                    } else if recovery.accept(&frame.bytes) {
+                        // Keep the queue shallow for low video latency. Never
+                        // evict an audio packet just to make room for video.
+                        if queue.len() >= 2 {
+                            if let Some(index) = queue.iter().position(|work| {
+                                matches!(work, ViewerWork::Frame(_, frame) if frame.track == MediaTrack::Video)
+                            }) {
+                                queue.remove(index);
+                                recovery.lost();
+                                local_lost = local_lost.saturating_add(1);
+                            } else {
+                                continue;
+                            }
+                        }
                         queue.push_back(ViewerWork::Frame(std::time::Instant::now(), frame));
                     }
                 }

@@ -204,6 +204,16 @@ unsafe extern "system" fn window_proc(
                 LRESULT(1)
             }
             WM_HIDE_CURSOR => {
+                // Repeated secure-input keep-alives and display transitions may
+                // request the same hidden state more than once. Re-parking on
+                // every request moves the real pointer to the primary-screen
+                // center and makes extension mode appear to jump. Keep the
+                // existing parking point and only refresh the cover window.
+                if let Some((x, y)) = PARKED.with(Cell::get) {
+                    cover(hwnd, x, y);
+                    SetTimer(Some(hwnd), CHECK_TIMER, CHECK_MS, None);
+                    return LRESULT(0);
+                }
                 // Park on the primary screen center so a captured pointer has
                 // room to move in every direction. `cover` selects the blank
                 // cursor before SetCursorPos, so the parking move is not

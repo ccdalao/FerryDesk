@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use topology::Topology;
 
 use ferry_platform::{Displays, Error, Result};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINTL, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, POINTL, WPARAM};
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::StationsAndDesktops::{
@@ -251,7 +251,7 @@ pub(super) fn recover_monitor() -> Result<()> {
 fn restore_physical_pointer() {
     // SAFETY: move only a pointer which is outside every remaining shared screen.
     unsafe {
-        let mut at = windows::Win32::Foundation::POINT::default();
+        let mut at = POINT::default();
         if GetCursorPos(&mut at).is_err() {
             return;
         }
@@ -264,15 +264,33 @@ fn restore_physical_pointer() {
         {
             return;
         }
-        if let Some(screen) = screens
+        if let Some((screen, target)) = screens
             .iter()
-            .find(|screen| screen.primary)
-            .or(screens.first())
+            .map(|screen| {
+                let left = screen.bounds.x;
+                let top = screen.bounds.y;
+                let right = left + screen.bounds.width as i32 - 1;
+                let bottom = top + screen.bounds.height as i32 - 1;
+                let target = POINT {
+                    x: at.x.clamp(left, right),
+                    y: at.y.clamp(top, bottom),
+                };
+                let dx = i64::from(target.x - at.x);
+                let dy = i64::from(target.y - at.y);
+                (screen, target, dx * dx + dy * dy)
+            })
+            .min_by_key(|(_, _, distance)| *distance)
+            .map(|(screen, target, _)| (screen, target))
         {
-            let _ = SetCursorPos(
-                screen.bounds.x + screen.bounds.width as i32 / 2,
-                screen.bounds.y + screen.bounds.height as i32 / 2,
+            tracing::debug!(
+                from_x = at.x,
+                from_y = at.y,
+                to_x = target.x,
+                to_y = target.y,
+                screen = ?screen.id,
+                "扩展屏回收后将光标放回最近实体屏边界"
             );
+            let _ = SetCursorPos(target.x, target.y);
         }
     }
 }

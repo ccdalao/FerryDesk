@@ -1,5 +1,6 @@
 //! 回录默认播放设备，以 48 kHz 双声道 PCM 发送和播放。
 
+use std::collections::VecDeque;
 use std::ptr::null_mut;
 
 use ferry_platform::Result;
@@ -11,6 +12,9 @@ use super::os;
 const BLOCK: usize = 4;
 const RECENT_BYTES: usize = 48_000 * BLOCK / 50; // 20 ms of stereo PCM.
 const CAPTURE_BATCH: usize = 32;
+/// Keep a short jitter buffer so bursty Wi-Fi does not turn delayed packets
+/// into audible holes. Old PCM is discarded first to preserve latency.
+const PLAYBACK_QUEUE_BYTES: usize = 48_000 * BLOCK / 10; // 100 ms.
 const FORMAT: WAVEFORMATEX = WAVEFORMATEX {
     wFormatTag: 1,
     nChannels: 2,
@@ -42,6 +46,18 @@ fn client(loopback: bool) -> Result<IAudioClient> {
         client
             .Initialize(AUDCLNT_SHAREMODE_SHARED, flags, 400_000, 0, &FORMAT, None)
             .map_err(|e| os("初始化扩展屏声音", e))?;
+        // WAVEFORMATEX is packed by Win32. Copy fields before passing them to
+        // tracing so the macro never creates an unaligned reference.
+        let sample_rate = FORMAT.nSamplesPerSec;
+        let channels = FORMAT.nChannels;
+        let bits = FORMAT.wBitsPerSample;
+        tracing::debug!(
+            loopback,
+            sample_rate,
+            channels,
+            bits,
+            "WASAPI 扩展屏音频设备已初始化"
+        );
         Ok(client)
     }
 }
@@ -129,6 +145,7 @@ pub(super) struct Playback {
     render: IAudioRenderClient,
     client: IAudioClient,
     capacity: u32,
+    pending: VecDeque<u8>,
 }
 
 // SAFETY: Both interfaces are used and released by the same MTA media worker.
@@ -148,6 +165,7 @@ impl Playback {
                 render,
                 client,
                 capacity,
+                pending: VecDeque::with_capacity(PLAYBACK_QUEUE_BYTES),
             })
         }
     }
@@ -158,13 +176,42 @@ impl Playback {
                 "扩展屏的音频包尺寸无效".into(),
             ));
         }
+        if bytes.len() >= PLAYBACK_QUEUE_BYTES {
+            // A malformed or unusually large packet must not make the drain
+            // range exceed the queue length. Keep only the newest complete
+            // PCM frames so latency remains bounded and samples stay aligned.
+            self.pending.clear();
+            let aligned_len = bytes.len() - bytes.len() % BLOCK;
+            let keep_from = aligned_len.saturating_sub(PLAYBACK_QUEUE_BYTES);
+            self.pending
+                .extend(bytes[keep_from..aligned_len].iter().copied());
+        } else {
+            let overflow = self
+                .pending
+                .len()
+                .saturating_add(bytes.len())
+                .saturating_sub(PLAYBACK_QUEUE_BYTES);
+            if overflow != 0 {
+                self.pending.drain(..overflow);
+                tracing::debug!(bytes = overflow, "扩展屏音频播放队列丢弃最旧 PCM");
+            }
+            self.pending.extend(bytes.iter().copied());
+        }
+        self.flush()
+    }
+
+    fn flush(&mut self) -> Result<()> {
+        let queued_frames = self.pending.len() / BLOCK;
+        if queued_frames == 0 {
+            return Ok(());
+        }
         // SAFETY: The PCM copy is at most the free space reported by WASAPI.
         unsafe {
             let padding = self
                 .client
                 .GetCurrentPadding()
                 .map_err(|e| os("查询播放缓冲", e))?;
-            let frames = ((bytes.len() / BLOCK) as u32).min(self.capacity.saturating_sub(padding));
+            let frames = (queued_frames as u32).min(self.capacity.saturating_sub(padding));
             if frames == 0 {
                 return Ok(());
             }
@@ -172,10 +219,22 @@ impl Playback {
                 .render
                 .GetBuffer(frames)
                 .map_err(|e| os("取得播放缓冲", e))?;
-            std::ptr::copy_nonoverlapping(bytes.as_ptr(), pointer, frames as usize * BLOCK);
+            let bytes_to_copy = frames as usize * BLOCK;
+            let (first, second) = self.pending.as_slices();
+            let first_len = first.len().min(bytes_to_copy);
+            std::ptr::copy_nonoverlapping(first.as_ptr(), pointer, first_len);
+            if first_len < bytes_to_copy {
+                std::ptr::copy_nonoverlapping(
+                    second.as_ptr(),
+                    pointer.add(first_len),
+                    bytes_to_copy - first_len,
+                );
+            }
             self.render
                 .ReleaseBuffer(frames, 0)
-                .map_err(|e| os("提交扩展屏音频", e))
+                .map_err(|e| os("提交扩展屏音频", e))?;
+            self.pending.drain(..bytes_to_copy);
+            Ok(())
         }
     }
 }

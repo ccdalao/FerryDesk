@@ -99,7 +99,26 @@ impl DisplayBackend for WinDisplayBackend {
                 }
             }
         });
-        let audio = audio.then(Loopback::new).transpose()?;
+        let audio = if audio {
+            match Loopback::new() {
+                Ok(loopback) => {
+                    tracing::info!(
+                        direction = "source",
+                        "扩展屏音频已启用：回录本机默认扬声器并发送到接收端"
+                    );
+                    Some(loopback)
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        "扩展屏音频回录不可用，继续使用无音频的视频扩展"
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
         let now = Instant::now();
         Ok(Box::new(Source {
             capture,
@@ -145,7 +164,26 @@ impl DisplayBackend for WinDisplayBackend {
         if let Some(gpu) = decoder.gpu() {
             viewer.enable_gpu(&gpu)?;
         }
-        let audio = audio.then(Playback::new).transpose()?;
+        let audio = if audio {
+            match Playback::new() {
+                Ok(playback) => {
+                    tracing::info!(
+                        direction = "viewer",
+                        "扩展屏音频已启用：在本机默认扬声器播放来源端声音"
+                    );
+                    Some(playback)
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        "扩展屏音频播放设备不可用，继续使用无音频的视频扩展"
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
         Ok(Box::new(Receiver {
             viewer,
             decoder,

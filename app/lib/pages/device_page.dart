@@ -329,6 +329,7 @@ class _DisplayExtension extends StatelessWidget {
             SfRow(
               icon: Icons.volume_up_outlined,
               title: strings.displayAudio,
+              subtitle: strings.displayAudioHint,
               trailing: SfSwitch(
                 value: extension.audio,
                 label: strings.displayAudio,

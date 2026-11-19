@@ -610,7 +610,7 @@ async fn a_mouse_burst_during_slow_video_preserves_clicks_and_the_display_sessio
         })
         .await;
         assert_eq!(source.active_sources.load(Ordering::SeqCst), 1);
-        stop_and_quit(a, b, source).await;
+        stop_and_quit(a, b, source.as_ref()).await;
     }
 }
 
@@ -760,4 +760,47 @@ async fn interleaved_audio_and_video_keep_wire_order_while_video_acknowledgement
     }
     assert_eq!(source.active_sources.load(Ordering::SeqCst), 1);
     stop_and_quit(a, b, &source).await;
+}
+
+#[tokio::test]
+async fn audio_follows_the_display_source_in_both_extension_directions() {
+    for (action, source_is_controller) in [
+        (DisplayAction::ExtendController, true),
+        (DisplayAction::ExtendControlled, false),
+    ] {
+        let controller = Arc::new(MediaProbe::default());
+        let controlled = Arc::new(MediaProbe::default());
+        let (a, b, _) =
+            paired_probes_with_relay(controller.clone(), controlled.clone(), false, true).await;
+        let source = if source_is_controller {
+            &controller
+        } else {
+            &controlled
+        };
+        let viewer = if source_is_controller {
+            &controlled
+        } else {
+            &controller
+        };
+
+        a.handle.send(Command::Display(action));
+        until("directional audio reaches the extension viewer", || {
+            viewer
+                .consumed_tracks
+                .lock()
+                .unwrap()
+                .contains(&MediaTrack::Audio)
+        })
+        .await;
+
+        assert!(source.generated.load(Ordering::SeqCst) > 0);
+        assert!(
+            viewer
+                .consumed_tracks
+                .lock()
+                .unwrap()
+                .contains(&MediaTrack::Video)
+        );
+        stop_and_quit(a, b, source.as_ref()).await;
+    }
 }

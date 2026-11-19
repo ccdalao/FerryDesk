@@ -1442,7 +1442,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get displayStart => 'Start';
 
   @override
-  String get displayAudio => 'Play audio from the extended desktop';
+  String get displayAudio => 'Play source audio through the receiving PC speakers';
+
+  @override
+  String get displayAudioHint =>
+      'When the controlled PC extends the controller, controller audio plays through the controlled PC speakers; the reverse direction works the same way.';
 
   @override
   String get displayStop => 'Stop display extension';

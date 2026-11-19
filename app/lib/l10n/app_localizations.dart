@@ -2555,8 +2555,14 @@ abstract class AppLocalizations {
   /// No description provided for @displayAudio.
   ///
   /// In zh, this message translates to:
-  /// **'播放扩展端的声音'**
+  /// **'扩展来源声音播放到接收电脑扬声器'**
   String get displayAudio;
+
+  /// No description provided for @displayAudioHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'开启“被控电脑屏幕扩展主控”时，主控声音会在被控电脑扬声器播放；反向扩展时则相反。'**
+  String get displayAudioHint;
 
   /// No description provided for @displayStop.
   ///

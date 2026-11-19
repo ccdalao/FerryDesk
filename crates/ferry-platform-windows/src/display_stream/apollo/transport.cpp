@@ -140,11 +140,29 @@ extern "C" void queueRtpPacket(PRTPV_QUEUE_ENTRY entry) {
       frame.index = index;
       frame.timestamp = static_cast<uint64_t>(raw->rtp.timestamp) * 100 / 9;
       frame.track = active_track;
-      // Overflow must be reported so the caller requests IDR before decoding
-      // any dependent frame. Never silently discard a compressed P-frame.
-      if (media.output.size() >= 4) { media.output.clear(); ++media.stats.lost; }
-      media.output.push_back(std::move(frame));
-      ++media.stats.frames;
+      // Keep audio ahead of video when the receiver is briefly busy. The old
+      // mixed queue cleared audio together with stale video, which produced
+      // audible holes on a busy hotspot. A video overflow still requests IDR;
+      // an audio packet evicts the oldest video first.
+      bool keep = true;
+      if (media.output.size() >= 4) {
+        auto video = std::find_if(media.output.begin(), media.output.end(),
+            [](const output_frame &queued) { return queued.track == 0; });
+        if (frame.track == 1) {
+          if (video != media.output.end()) media.output.erase(video);
+          else media.output.pop_front();
+        } else if (video != media.output.end()) {
+          media.output.erase(video);
+          ++media.stats.lost;
+        } else {
+          keep = false;
+          ++media.stats.lost;
+        }
+      }
+      if (keep) {
+        media.output.push_back(std::move(frame));
+        ++media.stats.frames;
+      }
       track.assembly.clear();
     }
   }
@@ -393,7 +411,10 @@ extern "C" int sf_apollo_media_receive_frame(sf_apollo_media *media, uint8_t *ou
     auto deadline = clock_type::now() + std::chrono::milliseconds(wait_ms);
     do {
       if (!media->output.empty()) {
-        auto frame = std::move(media->output.front()); media->output.pop_front();
+        auto audio = std::find_if(media->output.begin(), media->output.end(),
+            [](const output_frame &queued) { return queued.track == 1; });
+        auto selected = audio == media->output.end() ? media->output.begin() : audio;
+        auto frame = std::move(*selected); media->output.erase(selected);
         if (frame.bytes.size() > capacity) return -1;
         std::memcpy(out, frame.bytes.data(), frame.bytes.size());
         *length = static_cast<uint32_t>(frame.bytes.size()); *index=frame.index; *timestamp=frame.timestamp; *track_id=frame.track;

@@ -1383,7 +1383,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get displayStart => '开启';
 
   @override
-  String get displayAudio => '播放扩展端的声音';
+  String get displayAudio => '扩展来源声音播放到接收电脑扬声器';
+
+  @override
+  String get displayAudioHint => '开启“被控电脑屏幕扩展主控”时，主控声音会在被控电脑扬声器播放；反向扩展时则相反。';
 
   @override
   String get displayStop => '取消副屏拓展';

@@ -63,6 +63,7 @@ pub struct WinCapture {
 /// 钩子线程与调用方共用的状态。
 struct Shared {
     grabbed: AtomicBool,
+    releasing: AtomicBool,
     /// 本程序最近一次把光标挪到的位置（打包的 x、y）。挪光标本身也可能经过钩子，
     /// 落在这里的下一次移动当作没动。
     warp: AtomicU64,
@@ -109,6 +110,7 @@ impl WinCapture {
             _latency: InputLatency::start(),
             shared: Arc::new(Shared {
                 grabbed: AtomicBool::new(false),
+                releasing: AtomicBool::new(false),
                 warp: AtomicU64::new(NO_WARP),
             }),
             hider: None,
@@ -162,6 +164,18 @@ impl InputCapture for WinCapture {
     }
 
     fn grab(&self) -> Result<()> {
+        // Enter can be delivered twice while an extension window and the
+        // ordinary edge session are converging. Only the first transition may
+        // park the pointer; a repeated grab must not warp it to the center.
+        if self.shared.releasing.load(Ordering::SeqCst)
+            || self
+                .shared
+                .grabbed
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                .is_err()
+        {
+            return Ok(());
+        }
         // SAFETY: 只读查询系统度量。
         let (x, y) = unsafe {
             (
@@ -170,17 +184,28 @@ impl InputCapture for WinCapture {
             )
         };
         self.shared.set_warp(x, y);
-        match &self.hider {
+        let result = match &self.hider {
             // 把光标挪到主显示器中央的那个透明光标上。
-            Some(hider) => hider.set_hidden(true)?,
+            Some(hider) => hider.set_hidden(true),
             // SAFETY: 简单的系统调用。
-            None => unsafe { SetCursorPos(x, y) }.map_err(|_| last_error("SetCursorPos"))?,
+            None => unsafe { SetCursorPos(x, y) }.map_err(|_| last_error("SetCursorPos")),
+        };
+        if result.is_err() {
+            self.shared.grabbed.store(false, Ordering::SeqCst);
         }
-        self.shared.grabbed.store(true, Ordering::SeqCst);
-        Ok(())
+        result
     }
 
     fn release(&self, at: Point) -> Result<()> {
+        // Claim the transition before moving the pointer so duplicate Leave
+        // messages cannot perform a second warp.
+        if self.shared.releasing.swap(true, Ordering::SeqCst) {
+            return Ok(());
+        }
+        if !self.shared.grabbed.load(Ordering::SeqCst) {
+            self.shared.releasing.store(false, Ordering::SeqCst);
+            return Ok(());
+        }
         self.shared.set_warp(at.x, at.y);
         // SAFETY: 简单的系统调用。
         let moved = unsafe { SetCursorPos(at.x, at.y) }.map_err(|_| last_error("SetCursorPos"));
@@ -188,8 +213,10 @@ impl InputCapture for WinCapture {
         if let Some(hider) = &self.hider {
             let _ = hider.set_hidden(false);
         }
-        // 光标放好之后才结束抓取：从这一刻起标记为未抓取的事件，位置都是回来之后的。
+        // 光标放好之后才结束抓取，避免 SetCursorPos 的 WM_MOUSEMOVE 被当作
+        // 一次新的本机边缘移动。
         self.shared.grabbed.store(false, Ordering::SeqCst);
+        self.shared.releasing.store(false, Ordering::SeqCst);
         moved
     }
 
